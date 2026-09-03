@@ -68,3 +68,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added comprehensive unit and integration test suite in `tests/t_parser.nim` with real-world Nginx and Apache log fixtures (`tests/fixtures/combined.log`, `tests/fixtures/clf.log`).
 - Created runnable example in `examples/format_detection_and_parsing.nim`.
 - Recorded terminal asciicast (`docs/recordings/format_detection_and_parsing.cast`) and generated animated demo GIF (`docs/images/format_detection_and_parsing.gif`) with Asciinema and Agg.
+
+##### Category B: Streaming Ingestion & Pipe Support
+- Implemented `StreamReader` reference type supporting buffered low-allocation reading from files, STDIN pipes (`-` or `stdin`), custom in-memory streams (`std/streams.Stream`), and transparent gzip archives.
+- Implemented live file tailing (`-f / --follow`) with `readLineFollow` polling for file growth, handling log file truncation (`copytruncate`), clearing C stdio EOF states via `clearerr`, and recovering from log rotation (inode/device changes).
+- Added native transparent gzip decompression stream reader for `.log.gz` archives and gzip-compressed streams using system `zlib` C bindings (`gzopen`, `gzread`, `gzwrite`, `gzclose`), including `isGzipFile` and `writeGzipFile` utilities.
+- Ensured memory usage remains strictly $O(1)$ during continuous high-throughput streaming of multi-gigabyte log files using reusable line and chunk buffers.
+- Implemented high-level stream orchestrators `streamLogLines` and `streamRawLines` supporting progress callbacks, cancellation procs (`shouldStop`), and malformed line tracking.
+- Added throughput benchmarking utility `benchmarkParsingThroughput`, achieving > 400,000 lines/second on standard Combined log lines (exceeding the 100,000 lines/sec target).
+- Added unit and integration test suite in `tests/t_stream_engine.nim` covering buffered reading, live file tailing, truncation recovery, gzip reading from fixtures (`tests/fixtures/combined.log.gz`), O(1) memory bounds, and throughput benchmarks.
+- Created runnable example in `examples/streaming_and_pipe_ingestion.nim`.
+- Recorded terminal asciicast (`docs/recordings/streaming_and_pipe_ingestion.cast`) and generated animated demo GIF (`docs/images/streaming_and_pipe_ingestion.gif`) with Asciinema and Agg using JetBrainsMono Nerd Font Mono.

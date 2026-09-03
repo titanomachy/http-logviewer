@@ -82,6 +82,7 @@ High-performance HTTP log viewer and rogue bot detector written in Nim. `http_lo
   - [Threat and Actor Domain Models](#2-threat-and-actor-domain-models)
   - [Configuration and State Models](#3-configuration-and-state-models)
   - [Log Format Detection & Parsers](#4-log-format-detection--parsers)
+  - [Streaming Ingestion & Pipe Support](#5-streaming-ingestion--pipe-support)
 - [Examples](#examples)
 - [Development and Documentation](#development-and-documentation)
 - [Attribution and License](#attribution-and-license)
@@ -314,6 +315,58 @@ nim r --path:src examples/format_detection_and_parsing.nim
 
 ---
 
+### 5. Streaming Ingestion & Pipe Support
+
+Buffered low-allocation stream readers supporting regular log files, STDIN pipes (`tail -f access.log | http_logviewer`), native transparent gzip decompression (`.log.gz`), and live file growth tailing with truncation and rotation recovery:
+
+```nim
+import std/[options]
+import http_logviewer/core/[types, config]
+import http_logviewer/parser/[engine, formats]
+
+# 1. Opening a StreamReader on a regular file, STDIN ("-"), or compressed gzip (.log.gz)
+let reader = openStreamReader("access.log.gz")
+defer: reader.close()
+
+# 2. Low-allocation line-by-line reading reusing memory buffer
+var line = ""
+while reader.readLine(line):
+  echo "Read log line: ", line
+
+# 3. High-level streaming log line processor with O(1) memory
+let stats = streamLogLines(
+  "access.log",
+  follow = false,
+  onEntry = proc(entry: HttpLogEntry) =
+    if entry.statusCode >= 400:
+      echo "Alert: [", entry.statusCode, "] ", entry.path, " from ", entry.clientIp
+)
+echo "Streamed ", stats.parsedEntries, " entries in ", stats.elapsedSeconds, "s"
+
+# 4. Live file tailing (-f/--follow) with automatic rotation detection
+let tailReader = openStreamReader("/var/log/nginx/access.log")
+defer: tailReader.close()
+
+var liveLine = ""
+while tailReader.readLineFollow(liveLine, pollIntervalMs = 100):
+  echo "Live event: ", liveLine
+```
+
+#### Terminal Demonstration
+
+The recording below illustrates `StreamReader` file ingestion, transparent `.log.gz` decompression, live file tailing with real-time append detection, and $O(1)$ memory stream processing in action:
+
+![Streaming Ingestion and Pipe Support](docs/images/streaming_and_pipe_ingestion.gif)
+
+> *Source session recording:* [`docs/recordings/streaming_and_pipe_ingestion.cast`](docs/recordings/streaming_and_pipe_ingestion.cast) *(recorded with Asciinema, rendered via Agg with JetBrainsMono Nerd Font Mono)*.
+
+Compile and run this example:
+```bash
+nim r --path:src examples/streaming_and_pipe_ingestion.nim
+```
+
+---
+
 ## Examples
 
 The `examples/` folder provides executable demonstrations of each pipeline layer:
@@ -323,6 +376,7 @@ The `examples/` folder provides executable demonstrations of each pipeline layer
 - [`examples/threat_and_actor_models.nim`](examples/threat_and_actor_models.nim): Comprehensive threat scoring, geolocation enrichment, and multi-IP cluster correlation.
 - [`examples/configuration_and_state_models.nim`](examples/configuration_and_state_models.nim): Runtime session configuration, granular traffic filter criteria, CLI argument parsing, and JSON configuration serialization.
 - [`examples/format_detection_and_parsing.nim`](examples/format_detection_and_parsing.nim): High-performance log parsing across CLF, Combined, and JSON formats, format auto-detection, and HTTP status code token classification.
+- [`examples/streaming_and_pipe_ingestion.nim`](examples/streaming_and_pipe_ingestion.nim): High-performance streaming ingestion, live file tailing (`-f/--follow`), transparent `.log.gz` archive reading, and $O(1)$ memory processor.
 - [`examples/pipeline_scaffolding.nim`](examples/pipeline_scaffolding.nim): Cross-module pipeline event envelope demonstration.
 
 ---

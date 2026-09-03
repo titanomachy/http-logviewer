@@ -1,0 +1,11 @@
+{"version":3,"term":{"cols":100,"rows":28},"timestamp":1788478870,"command":"/tmp/streaming_and_pipe_ingestion","title":"Streaming Ingestion & Pipe Support","env":{"SHELL":"/usr/bin/zsh"}}
+[0.002, "o", "=== http_logviewer: Streaming Ingestion & Pipe Support ===\r\n\r\n[1] StreamReader on Regular Access Log File:\r\n"]
+[0.000, "o", "  Line 1: 93.184.216.34 - - [14/Jul/2026:08:32:10 +0000] \"GET /assets/style.css HTTP/...\r\n  Line 2: 198.51.100.42 - webadmin [14/Jul/2026:08:33:45 +0000] \"POST /api/v2/auth/to...\r\n  Total lines read: 6 (1092 bytes)\r\n\r\n[2] Transparent Gzip Decompression:\r\n  Detected as gzip: true\r\n"]
+[0.000, "o", "  Gzip Entry 1: [200] GET /assets/style.css (from 93.184.216.34)\r\n  Gzip Entry 2: [200] POST /api/v2/auth/token (from 198.51.100.42)\r\n"]
+[0.000, "o", "  Successfully read and parsed 6 entries directly from compressed gzip archive!\r\n\r\n[3] High-Level streamLogLines Processor (O(1) Memory):\r\n"]
+[0.000, "o", "  Processed:   6 entries\r\n  Malformed:   0 lines\r\n  Throughput:  176471. lines/sec\r\n\r\n[4] Live File Tailing (-f / --follow) Simulation:\r\n"]
+[0.000, "o", "  Initial line read: 127.0.0.1 - - [10/Oct/2026:13:55:36 +0000] \"GET /index.html HTTP/1.1\" 200 1024 \"-\" \"curl/8.0\"\r\n"]
+[0.000, "o", "  Followed new line: 192.168.1.50 - - [10/Oct/2026:13:55:37 +0000] \"POST /api/login HTTP/1.1\" 401 256 \"-\" \"curl/8.0\"\r\n"]
+[0.000, "o", "\r\n[5] Parsing Throughput Benchmark:\r\n"]
+[0.253, "o", "  Measured Throughput: 395055. lines/sec (target: > 100,000 lines/sec)\r\n\r\n=== Streaming Ingestion Engine Ready ===\r\n"]
+[0.000, "x", "0"]

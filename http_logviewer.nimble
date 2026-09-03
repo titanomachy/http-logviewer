@@ -46,5 +46,9 @@ task clean, "Clean all build artifacts":
     rmFile "build/t_prelude"
   if fileExists("build/t_core_types"):
     rmFile "build/t_core_types"
+  if fileExists("build/t_parser"):
+    rmFile "build/t_parser"
+  if fileExists("build/t_stream_engine"):
+    rmFile "build/t_stream_engine"
   if fileExists("build/test_all"):
     rmFile "build/test_all"
