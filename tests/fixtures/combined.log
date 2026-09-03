@@ -1,0 +1,6 @@
+93.184.216.34 - - [14/Jul/2026:08:32:10 +0000] "GET /assets/style.css HTTP/2.0" 200 15420 "https://example.org/home" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+198.51.100.42 - webadmin [14/Jul/2026:08:33:45 +0000] "POST /api/v2/auth/token HTTP/1.1" 200 512 "https://example.org/login" "curl/8.4.0"
+203.0.113.7 - - [14/Jul/2026:08:34:02 +0000] "GET /docs/setup.html HTTP/1.1" 301 0 "-" "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_2_1) AppleWebKit/605.1.15"
+192.0.2.15 - - [14/Jul/2026:08:35:19 +0000] "GET /images/logo.png HTTP/1.1" 304 0 "https://example.org/docs/setup.html" "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:122.0) Gecko/20100101 Firefox/122.0"
+198.51.100.99 - - [14/Jul/2026:08:36:50 +0000] "GET /nonexistent-page HTTP/1.1" 404 162 "https://example.org/" "Googlebot/2.1 (+http://www.google.com/bot.html)"
+2001:db8:85a3::8a2e:370:7334 - - [14/Jul/2026:08:37:12 +0000] "POST /api/checkout HTTP/2.0" 500 89 "https://example.org/cart" "Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X) AppleWebKit/605.1.15"

@@ -56,3 +56,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Implemented unit test suite in `tests/t_config.nim` verifying configuration construction, enum parsing, filtering logic, validation boundary constraints, JSON round-tripping, and CLI flag handling.
 - Created runnable code example in `examples/configuration_and_state_models.nim`.
 - Recorded terminal asciicast (`docs/recordings/configuration_and_state_models.cast`) and generated animated GIF (`docs/images/configuration_and_state_models.gif`) with Asciinema and Agg.
+
+#### Phase 02: High-Performance Log Ingestion & Parsing Engine
+##### Category A: Format Detection & Standard Formats
+- Implemented W3C Common Log Format (CLF) parser using fast `parseutils` slicing in `src/http_logviewer/parser/formats.nim` (`parseClfLine`).
+- Implemented Nginx and Apache Combined Log Format parser (`parseCombinedLine`, `parseNginxLine`) with escape-aware quoted token extraction for Referer and User-Agent fields.
+- Implemented log format auto-detection heuristic (`detectLogFormatLine`, `detectLogFormat`) inspecting leading lines to identify JSON, Combined, or CLF formats.
+- Implemented structured JSON access log parser (`parseJsonLine`) supporting flat Nginx JSON schemas and Caddy nested schemas with float/integer UNIX timestamps and header array lookups.
+- Implemented robust HTTP method and status code token parser (`parseHttpMethodToken`, `parseStatusCode`), RFC status class categorizer (`HttpStatusClass`, `statusClass`), boolean status predicates (`isSuccess`, `isRedirect`, `isClientError`, `isServerError`, `isNotFound`, `isForbidden`), and canonical reason phrases (`statusDescription`).
+- Provided unified high-level pipeline line parser (`parseLine`) with automatic format detection and graceful fallback resilience.
+- Added comprehensive unit and integration test suite in `tests/t_parser.nim` with real-world Nginx and Apache log fixtures (`tests/fixtures/combined.log`, `tests/fixtures/clf.log`).
+- Created runnable example in `examples/format_detection_and_parsing.nim`.
+- Recorded terminal asciicast (`docs/recordings/format_detection_and_parsing.cast`) and generated animated demo GIF (`docs/images/format_detection_and_parsing.gif`) with Asciinema and Agg.

@@ -81,6 +81,7 @@ High-performance HTTP log viewer and rogue bot detector written in Nim. `http_lo
   - [Core Log Entry Models](#1-core-log-entry-models)
   - [Threat and Actor Domain Models](#2-threat-and-actor-domain-models)
   - [Configuration and State Models](#3-configuration-and-state-models)
+  - [Log Format Detection & Parsers](#4-log-format-detection--parsers)
 - [Examples](#examples)
 - [Development and Documentation](#development-and-documentation)
 - [Attribution and License](#attribution-and-license)
@@ -126,6 +127,7 @@ The library exposes clean, type-safe Nim APIs organized into modular layers:
 | [Log Entry Models](#1-core-log-entry-models) | `http_logviewer/core/types` | `HttpLogEntry`, `HttpMethod` | Normalized representation of parsed HTTP log lines, status codes, and HTTP verbs |
 | [Threat & Actor Models](#2-threat-and-actor-domain-models) | `http_logviewer/core/types` | `ActorCategory`, `ThreatFlag`, `ThreatProfile`, `ActorCluster`, `GeoLocation`, `EnrichedLogRecord` | Threat intelligence scoring, atomic exploit flags, bot detection, and multi-IP correlation clusters |
 | [Configuration & State Models](#3-configuration-and-state-models) | `http_logviewer/core/config`, `http_logviewer/cli/args` | `ViewerConfig`, `FilterCriteria`, `OutputFormat`, `LogFormat`, `ColorMode`, `CliOptions` | Runtime session configuration, granular traffic filtering criteria, format negotiation, and CLI option mapping |
+| [Log Format Detection & Parsers](#4-log-format-detection--parsers) | `http_logviewer/parser/formats` | `parseClfLine`, `parseCombinedLine`, `parseNginxLine`, `parseJsonLine`, `parseLine`, `detectLogFormat`, `HttpStatusClass` | High-performance low-allocation parsers for W3C CLF, Nginx/Apache Combined, Caddy JSON, format auto-detection, and HTTP status code token classification |
 | Error Hierarchy | `http_logviewer/core/errors` | `HttpLogViewerError`, `ParseError`, `ThreatAnalysisError`, `ConfigError` | Robust exception hierarchy derived from `CatchableError` |
 
 ---
@@ -258,6 +260,60 @@ nim r --path:src examples/configuration_and_state_models.nim
 
 ---
 
+### 4. Log Format Detection & Parsers
+
+High-performance zero-allocation log parsers supporting W3C Common Log Format (CLF), Nginx and Apache Combined format, structured JSON access logs (Nginx flat and Caddy nested schemas), format auto-detection, and HTTP status code classification:
+
+```nim
+import std/options
+import http_logviewer/core/[types, config]
+import http_logviewer/parser/formats
+
+# 1. Format auto-detection across sample lines
+let line = "192.168.1.100 - - [10/Oct/2026:13:55:36 +0200] \"GET /index.html HTTP/1.1\" 200 2326 \"https://example.com\" \"Mozilla/5.0\""
+let detectedFormat = detectLogFormatLine(line)
+assert detectedFormat == LogFormatCombined
+
+# 2. Parsing Combined format (with Referer and User-Agent)
+var entry: HttpLogEntry
+assert parseCombinedLine(line, entry)
+assert entry.clientIp == "192.168.1.100"
+assert entry.statusCode == 200
+assert entry.referer == "https://example.com"
+assert entry.userAgent == "Mozilla/5.0"
+
+# 3. Parsing structured JSON access logs (supporting Caddy nested and Nginx flat schemas)
+let jsonLine = """{"client_ip": "1.2.3.4", "timestamp": "2026-10-10T13:55:36Z", "method": "GET", "uri": "/api/v1", "status": 200, "bytes": 1024}"""
+var jsonEntry: HttpLogEntry
+assert parseJsonLine(jsonLine, jsonEntry)
+assert jsonEntry.clientIp == "1.2.3.4"
+
+# 4. Status code classification and canonical descriptions
+assert statusClass(404) == StatusClientError
+assert isClientError(404)
+assert statusDescription(404) == "Not Found"
+
+# 5. Unified line parser with automatic format detection
+var autoEntry: HttpLogEntry
+assert parseLine(line, autoEntry, LogFormatAuto)
+assert autoEntry.statusCode == 200
+```
+
+#### Terminal Demonstration
+
+The recording below illustrates format auto-detection, Common Log Format (CLF) parsing, Combined format parsing with referer/user-agent extraction, Caddy JSON parsing, and HTTP status classification in action:
+
+![Log Format Detection and Parsing](docs/images/format_detection_and_parsing.gif)
+
+> *Source session recording:* [`docs/recordings/format_detection_and_parsing.cast`](docs/recordings/format_detection_and_parsing.cast) *(recorded with Asciinema, rendered via Agg with JetBrainsMono Nerd Font Mono)*.
+
+Compile and run this example:
+```bash
+nim r --path:src examples/format_detection_and_parsing.nim
+```
+
+---
+
 ## Examples
 
 The `examples/` folder provides executable demonstrations of each pipeline layer:
@@ -266,6 +322,7 @@ The `examples/` folder provides executable demonstrations of each pipeline layer
 - [`examples/log_entry_models.nim`](examples/log_entry_models.nim): Detailed usage of `HttpLogEntry`, `HttpMethod`, stringifiers, and JSON round-tripping.
 - [`examples/threat_and_actor_models.nim`](examples/threat_and_actor_models.nim): Comprehensive threat scoring, geolocation enrichment, and multi-IP cluster correlation.
 - [`examples/configuration_and_state_models.nim`](examples/configuration_and_state_models.nim): Runtime session configuration, granular traffic filter criteria, CLI argument parsing, and JSON configuration serialization.
+- [`examples/format_detection_and_parsing.nim`](examples/format_detection_and_parsing.nim): High-performance log parsing across CLF, Combined, and JSON formats, format auto-detection, and HTTP status code token classification.
 - [`examples/pipeline_scaffolding.nim`](examples/pipeline_scaffolding.nim): Cross-module pipeline event envelope demonstration.
 
 ---
