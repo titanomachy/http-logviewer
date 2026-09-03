@@ -28,8 +28,13 @@ task test, "Run unit tests":
 task ci, "Run CI pre-commit and sanity tests":
   exec "bash scripts/ci_check.sh"
 
+task docs, "Generate HTML documentation":
+  exec "nim doc --project --outdir:build/docs src/http_logviewer.nim"
+
 task clean, "Clean all build artifacts":
   rmDir "build/nimcache"
+  if dirExists("build/docs"):
+    rmDir "build/docs"
   rmFile "build/http_logviewer"
   if fileExists("build/test1"):
     rmFile "build/test1"
@@ -39,5 +44,7 @@ task clean, "Clean all build artifacts":
     rmFile "build/t_scaffolding"
   if fileExists("build/t_prelude"):
     rmFile "build/t_prelude"
+  if fileExists("build/t_core_types"):
+    rmFile "build/t_core_types"
   if fileExists("build/test_all"):
     rmFile "build/test_all"
