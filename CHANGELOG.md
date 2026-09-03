@@ -89,3 +89,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added comprehensive unit and stress tests in `tests/t_parser.nim` and `tests/t_stream_engine.nim` covering adversarial OWASP payloads, SQL injection strings, raw binary noise, non-log formats (HTML, Java stack traces, SQL, syslog), and truncated lines at every token boundary.
 - Created runnable example in `examples/parsing_fault_tolerance.nim`.
 - Recorded terminal asciicast (`docs/recordings/parsing_fault_tolerance.cast`) and generated animated demo GIF (`docs/images/parsing_fault_tolerance.gif`) with Asciinema and Agg using JetBrainsMono Nerd Font Mono.
+
+#### Phase 03: GeoIP Enrichment & Country Flag Resolution
+##### Category A: IP-to-Country Lookup Engine
+- Designed polymorphic `GeoIpProvider` interface with abstract base lookup dispatch and implemented unified `GeoIpEngine` in `src/http_logviewer/enrichment/geoip.nim`.
+- Implemented zero-dependency offline binary MaxMind DB (`.mmdb`) parser (`MmdbGeoIpProvider`) supporting 24-bit, 28-bit, and 32-bit binary trees, data pointer resolution, metadata inspection, and country/city resolution.
+- Implemented embedded offline CIDR fallback database (`CidrGeoIpProvider`) mapping prominent public clouds and global networks (Google, Cloudflare, AWS, Azure, Hetzner, OVH, DigitalOcean, Netherlands, China, Russia, Japan, etc.) with zero external file dependencies.
+- Implemented RFC 1918, Loopback, Link-Local, CGNAT, and IPv6 private/ULA bogon detection (`isPrivateIp`), instantly mapping local traffic to `🏠 LO (Local / Private Network)` with zero database overhead.
+- Implemented high-performance $O(1)$ LRU memory cache (`LruCache`, `CachedGeoIpProvider`) with configurable entry limits (default 50,000 entries), sub-100ns lookup latency, and hit/miss telemetry tracking.
+- Implemented automatic database discovery (`discoverMmdbPath`) searching custom paths (`--geoip-db`), current working directory, and standard system paths (`/usr/share/GeoIP/`, `/var/lib/GeoIP/`, `/etc/GeoIP/`).
+- Added ISO 3166-1 alpha-2 regional indicator symbol flag emoji converter (`isoToFlagEmoji`) and country dictionary (`getCountryName`) in `src/http_logviewer/enrichment/flags.nim`.
+- Added comprehensive unit and integration test suite in `tests/t_geoip.nim` verifying provider dispatch, synthetic MMDB parsing, CIDR lookups, private IP classification, LRU eviction, and benchmark latency.
+- Created standalone runnable code example in `examples/ip_to_country_lookup.nim`.
+- Recorded terminal asciicast (`docs/recordings/ip_to_country_lookup.cast`) and rendered high-resolution animated demo GIF (`docs/images/ip_to_country_lookup.gif`) with Asciinema and Agg.

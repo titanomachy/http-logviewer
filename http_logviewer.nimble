@@ -50,5 +50,7 @@ task clean, "Clean all build artifacts":
     rmFile "build/t_parser"
   if fileExists("build/t_stream_engine"):
     rmFile "build/t_stream_engine"
+  if fileExists("build/t_geoip"):
+    rmFile "build/t_geoip"
   if fileExists("build/test_all"):
     rmFile "build/test_all"

@@ -84,6 +84,7 @@ High-performance HTTP log viewer and rogue bot detector written in Nim. `http_lo
   - [Log Format Detection & Parsers](#4-log-format-detection--parsers)
   - [Streaming Ingestion & Pipe Support](#5-streaming-ingestion--pipe-support)
   - [Parsing Fault-Tolerance & Edge Cases](#6-parsing-fault-tolerance--edge-cases)
+  - [IP-to-Country Lookup & GeoIP Enrichment](#7-ip-to-country-lookup--geoip-enrichment)
 - [Examples](#examples)
 - [Development and Documentation](#development-and-documentation)
 - [Attribution and License](#attribution-and-license)
@@ -132,6 +133,7 @@ The library exposes clean, type-safe Nim APIs organized into modular layers:
 | [Log Format Detection & Parsers](#4-log-format-detection--parsers) | `http_logviewer/parser/formats` | `parseClfLine`, `parseCombinedLine`, `parseNginxLine`, `parseJsonLine`, `parseLine`, `detectLogFormat`, `HttpStatusClass` | High-performance low-allocation parsers for W3C CLF, Nginx/Apache Combined, Caddy JSON, format auto-detection, and HTTP status code token classification |
 | [Streaming Ingestion & Pipe Support](#5-streaming-ingestion--pipe-support) | `http_logviewer/parser/engine` | `StreamReader`, `readLineFollow`, `streamLogLines`, `streamRawLines`, `benchmarkParsingThroughput` | Low-allocation streaming ingestion, live file tailing (`-f`), transparent `.log.gz` decompression, and $O(1)$ memory bounds |
 | [Parsing Fault-Tolerance & Edge Cases](#6-parsing-fault-tolerance--edge-cases) | `http_logviewer/parser/formats`, `http_logviewer/parser/engine` | `sanitizeUtf8`, `sanitizeControlChars`, `cleanIpAddress`, `normalizeLogDateString`, `ParsingDiagnostics` | Sanitization of invalid UTF-8 bytes and ANSI escapes, interior quote recovery, IPv4/IPv6 port stripping, multi-locale timestamps, and streaming diagnostics |
+| [IP-to-Country Lookup & GeoIP](#7-ip-to-country-lookup--geoip-enrichment) | `http_logviewer/enrichment/geoip`, `http_logviewer/enrichment/flags` | `GeoIpProvider`, `GeoIpEngine`, `MmdbGeoIpProvider`, `CidrGeoIpProvider`, `LruCache`, `isoToFlagEmoji` | High-performance IP geolocation, offline MMDB parser, fallback CIDR database, LRU memory cache, and automatic database discovery |
 | Error Hierarchy | `http_logviewer/core/errors` | `HttpLogViewerError`, `ParseError`, `ThreatAnalysisError`, `ConfigError` | Robust exception hierarchy derived from `CatchableError` |
 
 ---
@@ -422,6 +424,63 @@ nim r --path:src examples/parsing_fault_tolerance.nim
 
 ---
 
+### 7. IP-to-Country Lookup & GeoIP Enrichment
+
+Every HTTP request is automatically enriched with geographical origin metadata, ISO 3166-1 alpha-2 country codes, English country names, and Unicode regional indicator flag emojis (e.g. `🇺🇸 US`, `🇩🇪 DE`, `🇳🇱 NL`, `🏠 LAN`):
+
+- **GeoIpProvider & GeoIpEngine**: Polymorphic provider architecture supporting MaxMind MMDB files, offline CIDR fallback databases, and LRU-cached backends.
+- **Pure Nim Offline MMDB Parser**: Zero-dependency binary parser for MaxMind DB (`.mmdb`) databases (GeoLite2-Country and GeoLite2-City) supporting 24-bit, 28-bit, and 32-bit trees, data section pointer resolution, and metadata auto-parsing.
+- **Embedded Offline CIDR Fallback**: Built-in compact subnet database covering major cloud providers and international backbones (Google, Cloudflare, AWS, Azure, Hetzner, OVH, DigitalOcean, Netherlands, China, Russia, Japan, etc.) with zero external file requirements.
+- **Bogon & Private LAN Detection**: RFC 1918 subnets (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`), Loopback (`127.0.0.1`, `::1`), Link-Local (`169.254.0.0/16`, `fe80::/10`), CGNAT (`100.64.0.0/10`), and IPv6 ULA (`fc00::/7`) are resolved instantly as `🏠 LO (Local / Private Network)` with zero database overhead.
+- **High-Performance LRU Memory Cache**: O(1) in-memory cache with configurable capacity (default 50,000 entries), achieving sub-100ns lookup latency on repeated queries and comprehensive hit/miss statistics.
+- **Automatic Database Discovery**: Automatically discovers local MMDB databases across custom paths (`--geoip-db=<path>`), current working directory (`./GeoLite2-Country.mmdb`), and standard system directories (`/usr/share/GeoIP/`, `/var/lib/GeoIP/`, `/etc/GeoIP/`).
+
+```nim
+import std/options
+import http_logviewer/core/types
+import http_logviewer/enrichment/geoip
+
+# 1. Initialize GeoIpEngine with automatic discovery and embedded fallback
+let engine = newGeoIpEngine()
+
+# 2. RFC 1918 Private LAN / Bogon detection (zero database overhead)
+let privateLoc = engine.lookup("192.168.1.100")
+assert privateLoc.isPrivate == true
+assert privateLoc.countryCode == "LO"
+assert privateLoc.flagEmoji == "🏠"
+
+# 3. Public IPv4 and IPv6 geolocation lookups
+let googleLoc = engine.lookup("8.8.8.8")
+assert googleLoc.countryCode == "US"
+assert googleLoc.flagEmoji == "🇺🇸"
+
+let hetznerLoc = engine.lookup("78.46.100.2")
+assert hetznerLoc.countryCode == "DE"
+assert hetznerLoc.flagEmoji == "🇩🇪"
+
+let ipv6Loc = engine.lookup("2001:4860:4860::8888")
+assert ipv6Loc.countryCode == "US"
+
+# 4. Sub-100ns O(1) LRU memory cache
+let cached = engine.lookup("8.8.8.8")
+assert engine.cache.hits > 0
+```
+
+#### Terminal Demonstration
+
+The recording below illustrates IP-to-Country geolocation enrichment, RFC 1918 private IP detection, public IPv4/IPv6 network resolution, and high-performance LRU memory cache benchmarks in action:
+
+![IP-to-Country Lookup Engine](docs/images/ip_to_country_lookup.gif)
+
+> *Source session recording:* [`docs/recordings/ip_to_country_lookup.cast`](docs/recordings/ip_to_country_lookup.cast) *(recorded with Asciinema, rendered via Agg with JetBrainsMono Nerd Font Mono)*.
+
+Compile and run this example:
+```bash
+nim r --path:src examples/ip_to_country_lookup.nim
+```
+
+---
+
 ## Examples
 
 The `examples/` folder provides executable demonstrations of each pipeline layer:
@@ -433,6 +492,7 @@ The `examples/` folder provides executable demonstrations of each pipeline layer
 - [`examples/format_detection_and_parsing.nim`](examples/format_detection_and_parsing.nim): High-performance log parsing across CLF, Combined, and JSON formats, format auto-detection, and HTTP status code token classification.
 - [`examples/streaming_and_pipe_ingestion.nim`](examples/streaming_and_pipe_ingestion.nim): High-performance streaming ingestion, live file tailing (`-f/--follow`), transparent `.log.gz` archive reading, and $O(1)$ memory processor.
 - [`examples/parsing_fault_tolerance.nim`](examples/parsing_fault_tolerance.nim): Robust parsing fault-tolerance, byte and quote sanitization, IPv4/IPv6 address normalization, multi-locale timestamps, and streaming diagnostics.
+- [`examples/ip_to_country_lookup.nim`](examples/ip_to_country_lookup.nim): Comprehensive IP-to-Country geolocation, offline CIDR lookups, MaxMind MMDB parsing, LRU cache benchmarks, and bogon LAN detection.
 - [`examples/pipeline_scaffolding.nim`](examples/pipeline_scaffolding.nim): Cross-module pipeline event envelope demonstration.
 
 ---
