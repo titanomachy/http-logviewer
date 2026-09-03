@@ -299,3 +299,87 @@ suite "Streaming Ingestion - Benchmark Throughput (Phase 02 / Category B / Item 
     # Even in non-release mode on standard hardware, should comfortably process tens of thousands,
     # and in release mode easily exceeds 150,000 to 500,000 lines/sec.
     check tps > 30_000.0 # generous baseline for debug/check mode, release mode exceeds 100k
+
+suite "Streaming Ingestion - Malformed Line Handling & Diagnostics (Phase 02 / Category C / Item 02)":
+
+  test "Item 02: ParsingDiagnostics records successes, malformed lines, and emits diagnostics":
+    var warningsEmitted: seq[string] = @[]
+    let writer = proc(msg: string) =
+      warningsEmitted.add(msg)
+
+    var diag = initParsingDiagnostics(warnToStderr = true)
+    check diag.totalLines == 0
+    check diag.parsedCount == 0
+    check diag.unparsedCount == 0
+
+    diag.recordSuccess()
+    check diag.totalLines == 1
+    check diag.parsedCount == 1
+    check diag.unparsedCount == 0
+
+    diag.recordMalformed("corrupted garbage line", writer)
+    check diag.totalLines == 2
+    check diag.parsedCount == 1
+    check diag.unparsedCount == 1
+    check diag.lastErrorLine == "corrupted garbage line"
+    check diag.lastErrorLineNum == 2
+    check warningsEmitted.len == 1
+    check warningsEmitted[0].contains("Line 2: malformed or unparseable")
+
+  test "Item 02: streamLogLines records unparsed counter and triggers callbacks and warnings":
+    let mixedLogPath = "build/test_mixed_malformed.log"
+    let content = """
+192.168.1.1 - - [10/Oct/2026:13:55:36 +0000] "GET /valid1 HTTP/1.1" 200 100 "-" "Mozilla/5.0"
+this is completely broken garbage not a log line
+192.168.1.2 - - [10/Oct/2026:13:55:37 +0000] "GET /valid2 HTTP/1.1" 404 50 "-" "curl/7.88"
+another invalid line without tokens
+192.168.1.3 - - [10/Oct/2026:13:55:38 +0000] "POST /valid3 HTTP/1.1" 201 200 "-" "curl/7.88"
+"""
+    writeFile(mixedLogPath, content.strip())
+
+    var parsedEntries: seq[HttpLogEntry] = @[]
+    var malformedLines: seq[string] = @[]
+    var warningsList: seq[string] = @[]
+
+    let stats = streamLogLines(
+      mixedLogPath,
+      follow = false,
+      onEntry = proc(e: HttpLogEntry) =
+        parsedEntries.add(e),
+      onMalformed = proc(l: string) =
+        malformedLines.add(l),
+      warnOnMalformed = true,
+      diagnosticWriter = proc(msg: string) =
+        warningsList.add(msg)
+    )
+
+    check stats.linesRead == 5
+    check stats.parsedEntries == 3
+    check stats.malformedLines == 2
+    check parsedEntries.len == 3
+    check malformedLines.len == 2
+    check warningsList.len == 2
+    check warningsList[0].contains("Line 2: malformed")
+    check warningsList[1].contains("Line 4: malformed")
+
+    removeFile(mixedLogPath)
+
+  test "Item 02: StreamReader.entries iterator tracks parsedEntries and unparsedLines counters":
+    let mixedLogPath = "build/test_stream_entries_counters.log"
+    let content = "10.0.0.1 - - [10/Oct/2026:13:55:36 +0000] \"GET /a HTTP/1.1\" 200 10 \"-\" \"test\"\nmalformed line\n10.0.0.2 - - [10/Oct/2026:13:55:37 +0000] \"GET /b HTTP/1.1\" 200 20 \"-\" \"test\"\n"
+    writeFile(mixedLogPath, content)
+
+    let reader = openStreamReader(mixedLogPath)
+    var parsed: seq[HttpLogEntry] = @[]
+    var badCount = 0
+
+    for entry in reader.entries(onMalformed = proc(l: string) = inc(badCount)):
+      parsed.add(entry)
+
+    check parsed.len == 2
+    check reader.parsedEntries == 2
+    check reader.unparsedLines == 1
+    check badCount == 1
+
+    reader.close()
+    removeFile(mixedLogPath)

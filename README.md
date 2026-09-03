@@ -83,6 +83,7 @@ High-performance HTTP log viewer and rogue bot detector written in Nim. `http_lo
   - [Configuration and State Models](#3-configuration-and-state-models)
   - [Log Format Detection & Parsers](#4-log-format-detection--parsers)
   - [Streaming Ingestion & Pipe Support](#5-streaming-ingestion--pipe-support)
+  - [Parsing Fault-Tolerance & Edge Cases](#6-parsing-fault-tolerance--edge-cases)
 - [Examples](#examples)
 - [Development and Documentation](#development-and-documentation)
 - [Attribution and License](#attribution-and-license)
@@ -129,6 +130,8 @@ The library exposes clean, type-safe Nim APIs organized into modular layers:
 | [Threat & Actor Models](#2-threat-and-actor-domain-models) | `http_logviewer/core/types` | `ActorCategory`, `ThreatFlag`, `ThreatProfile`, `ActorCluster`, `GeoLocation`, `EnrichedLogRecord` | Threat intelligence scoring, atomic exploit flags, bot detection, and multi-IP correlation clusters |
 | [Configuration & State Models](#3-configuration-and-state-models) | `http_logviewer/core/config`, `http_logviewer/cli/args` | `ViewerConfig`, `FilterCriteria`, `OutputFormat`, `LogFormat`, `ColorMode`, `CliOptions` | Runtime session configuration, granular traffic filtering criteria, format negotiation, and CLI option mapping |
 | [Log Format Detection & Parsers](#4-log-format-detection--parsers) | `http_logviewer/parser/formats` | `parseClfLine`, `parseCombinedLine`, `parseNginxLine`, `parseJsonLine`, `parseLine`, `detectLogFormat`, `HttpStatusClass` | High-performance low-allocation parsers for W3C CLF, Nginx/Apache Combined, Caddy JSON, format auto-detection, and HTTP status code token classification |
+| [Streaming Ingestion & Pipe Support](#5-streaming-ingestion--pipe-support) | `http_logviewer/parser/engine` | `StreamReader`, `readLineFollow`, `streamLogLines`, `streamRawLines`, `benchmarkParsingThroughput` | Low-allocation streaming ingestion, live file tailing (`-f`), transparent `.log.gz` decompression, and $O(1)$ memory bounds |
+| [Parsing Fault-Tolerance & Edge Cases](#6-parsing-fault-tolerance--edge-cases) | `http_logviewer/parser/formats`, `http_logviewer/parser/engine` | `sanitizeUtf8`, `sanitizeControlChars`, `cleanIpAddress`, `normalizeLogDateString`, `ParsingDiagnostics` | Sanitization of invalid UTF-8 bytes and ANSI escapes, interior quote recovery, IPv4/IPv6 port stripping, multi-locale timestamps, and streaming diagnostics |
 | Error Hierarchy | `http_logviewer/core/errors` | `HttpLogViewerError`, `ParseError`, `ThreatAnalysisError`, `ConfigError` | Robust exception hierarchy derived from `CatchableError` |
 
 ---
@@ -367,6 +370,58 @@ nim r --path:src examples/streaming_and_pipe_ingestion.nim
 
 ---
 
+### 6. Parsing Fault-Tolerance & Edge Cases
+
+Production HTTP access logs frequently contain corrupted character encodings, unescaped interior quotes, proxy port suffixes, multi-locale timestamps, and adversarial injection payloads. `http_logviewer` provides robust sanitization, address normalization, and diagnostics tracking to ensure ingestion never panics:
+
+- **Byte Sanitization & Escaped Quotes**: Cleans invalid UTF-8 byte sequences via replacement or excision, scrubs raw ASCII control characters and ANSI terminal escape codes (`\x1b`), and handles unescaped interior quotes in URI paths and User-Agents using lookahead delimiter heuristics.
+- **IPv4 & IPv6 Address Normalization**: Strips port numbers (e.g. `192.168.1.1:8080` or `[2001:db8::1]:443`), removes bracket enclosures, trims network interface scopes (`%eth0`), and extracts the client IP from comma-separated `X-Forwarded-For` proxy chains.
+- **Locale Timestamp Normalization**: Normalizes international month abbreviations (German `Okt`, Dutch `mrt`, French `févr.`, Spanish `Dic`) and parses negative timezone offsets (e.g. `[10/Oct/2000:13:55:36 -0700]`).
+- **Streaming Diagnostics & Malformed Line Tracking**: Tracks `parsedEntries` and `unparsedLines` counters within `StreamReader` and provides `ParsingDiagnostics` for recording unparseable records with optional stderr warnings.
+
+```nim
+import std/times
+import http_logviewer/core/types
+import http_logviewer/parser/[formats, engine]
+
+# 1. Handling unescaped interior quotes in requests and User-Agents
+let raw = "192.168.1.50 - - [10/Oct/2026:13:55:36 +0000] \"GET /search?q=\"exploit\" HTTP/1.1\" 200 1024 \"-\" \"Mozilla/5.0 (\"Special\") Chrome\""
+var entry: HttpLogEntry
+assert parseCombinedLine(raw, entry)
+assert entry.path == "/search?q=\"exploit\""
+
+# 2. IPv4/IPv6 port stripping and bracket removal
+assert cleanIpAddress("192.168.1.1:8080") == "192.168.1.1"
+assert cleanIpAddress("[2001:db8::1]:443") == "2001:db8::1"
+assert isIpv6Address(cleanIpAddress("[2001:db8::1]:443"))
+
+# 3. International month abbreviations and negative UTC offsets
+let dt = parseLogDateTime("10/Okt/2026:13:55:36 -0700")
+assert dt.utc.hour == 20
+
+# 4. Stream diagnostics tracking malformed lines
+var diag = initParsingDiagnostics(warnToStderr = false)
+diag.recordSuccess()
+diag.recordMalformed("MALFORMED UNPARSEABLE LINE")
+assert diag.unparsedCount == 1
+assert diag.totalLines == 2
+```
+
+#### Terminal Demonstration
+
+The recording below illustrates quote recovery, byte sanitization, IPv4/IPv6 address normalization, international date normalization, and streaming diagnostics tracking in action:
+
+![Parsing Fault-Tolerance and Edge Cases](docs/images/parsing_fault_tolerance.gif)
+
+> *Source session recording:* [`docs/recordings/parsing_fault_tolerance.cast`](docs/recordings/parsing_fault_tolerance.cast) *(recorded with Asciinema, rendered via Agg with JetBrainsMono Nerd Font Mono)*.
+
+Compile and run this example:
+```bash
+nim r --path:src examples/parsing_fault_tolerance.nim
+```
+
+---
+
 ## Examples
 
 The `examples/` folder provides executable demonstrations of each pipeline layer:
@@ -377,6 +432,7 @@ The `examples/` folder provides executable demonstrations of each pipeline layer
 - [`examples/configuration_and_state_models.nim`](examples/configuration_and_state_models.nim): Runtime session configuration, granular traffic filter criteria, CLI argument parsing, and JSON configuration serialization.
 - [`examples/format_detection_and_parsing.nim`](examples/format_detection_and_parsing.nim): High-performance log parsing across CLF, Combined, and JSON formats, format auto-detection, and HTTP status code token classification.
 - [`examples/streaming_and_pipe_ingestion.nim`](examples/streaming_and_pipe_ingestion.nim): High-performance streaming ingestion, live file tailing (`-f/--follow`), transparent `.log.gz` archive reading, and $O(1)$ memory processor.
+- [`examples/parsing_fault_tolerance.nim`](examples/parsing_fault_tolerance.nim): Robust parsing fault-tolerance, byte and quote sanitization, IPv4/IPv6 address normalization, multi-locale timestamps, and streaming diagnostics.
 - [`examples/pipeline_scaffolding.nim`](examples/pipeline_scaffolding.nim): Cross-module pipeline event envelope demonstration.
 
 ---

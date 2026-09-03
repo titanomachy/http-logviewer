@@ -37,6 +37,8 @@ type
     stopped*: bool
     linesRead*: int64
     bytesRead*: int64
+    parsedEntries*: int64
+    unparsedLines*: int64
     bufferSize*: int
     lastFileSize*: int64
     lastFilePos*: int64
@@ -51,12 +53,54 @@ type
   RawLineCallback* = proc(line: string) {.closure.}
   MalformedLineCallback* = proc(rawLine: string, lineNum: int64) {.closure.}
 
+  ParsingDiagnostics* = object
+    totalLines*: int64
+    parsedCount*: int64
+    unparsedCount*: int64
+    warnToStderr*: bool
+    lastErrorLine*: string
+    lastErrorLineNum*: int64
+
   StreamStats* = object
     linesRead*: int64
     bytesRead*: int64
     parsedEntries*: int64
     malformedLines*: int64
     elapsedSeconds*: float
+
+proc initParsingDiagnostics*(warnToStderr: bool = false): ParsingDiagnostics =
+  ## Initializes a ParsingDiagnostics recorder tracking parsed and malformed line counts.
+  ParsingDiagnostics(
+    totalLines: 0,
+    parsedCount: 0,
+    unparsedCount: 0,
+    warnToStderr: warnToStderr,
+    lastErrorLine: "",
+    lastErrorLineNum: 0
+  )
+
+proc recordSuccess*(diag: var ParsingDiagnostics) {.inline.} =
+  ## Records a successfully parsed log entry line.
+  inc(diag.totalLines)
+  inc(diag.parsedCount)
+
+proc recordMalformed*(
+  diag: var ParsingDiagnostics,
+  rawLine: string,
+  diagnosticWriter: proc(msg: string) = nil
+) =
+  ## Records an unparseable or corrupted log line, incrementing the unparsed counter
+  ## and optionally writing a diagnostic warning to stderr.
+  inc(diag.totalLines)
+  inc(diag.unparsedCount)
+  diag.lastErrorLine = rawLine
+  diag.lastErrorLineNum = diag.totalLines
+  if diag.warnToStderr:
+    let msg = "[WARN] Line " & $diag.totalLines & ": malformed or unparseable log entry: " & rawLine.strip()
+    if diagnosticWriter != nil:
+      diagnosticWriter(msg)
+    else:
+      stderr.writeLine(msg)
 
 proc isGzipFile*(path: string): bool =
   ## Returns true if the file path ends with a gzip extension or starts with gzip magic bytes (1F 8B).
@@ -101,6 +145,8 @@ proc openStdinStreamReader*(bufferSize: int = 65536): StreamReader =
     stopped: false,
     linesRead: 0,
     bytesRead: 0,
+    parsedEntries: 0,
+    unparsedLines: 0,
     bufferSize: bufferSize,
     internalLineBuffer: newStringOfCap(1024)
   )
@@ -119,6 +165,8 @@ proc openStreamReader*(stream: Stream, sourceName: string = "<stream>", bufferSi
     stopped: false,
     linesRead: 0,
     bytesRead: 0,
+    parsedEntries: 0,
+    unparsedLines: 0,
     bufferSize: bufferSize,
     internalLineBuffer: newStringOfCap(1024)
   )
@@ -147,6 +195,8 @@ proc openStreamReader*(path: string, bufferSize: int = 65536): StreamReader =
       stopped: false,
       linesRead: 0,
       bytesRead: 0,
+      parsedEntries: 0,
+      unparsedLines: 0,
       bufferSize: bufferSize,
       gzBuffer: newSeq[char](bufferSize),
       gzBufPos: 0,
@@ -181,6 +231,8 @@ proc openStreamReader*(path: string, bufferSize: int = 65536): StreamReader =
     stopped: false,
     linesRead: 0,
     bytesRead: 0,
+    parsedEntries: 0,
+    unparsedLines: 0,
     bufferSize: bufferSize,
     lastFileSize: fsize,
     lastFilePos: 0,
@@ -415,13 +467,23 @@ iterator linesFollow*(
   while reader.readLineFollow(line, pollIntervalMs, maxWaitMs, shouldStop):
     yield line
 
-iterator entries*(reader: StreamReader, format: LogFormat = LogFormatAuto): HttpLogEntry =
+iterator entries*(
+  reader: StreamReader,
+  format: LogFormat = LogFormatAuto,
+  onMalformed: proc(line: string) = nil
+): HttpLogEntry =
   ## Iterates over parsed HttpLogEntry items from the stream.
+  ## Increments reader.parsedEntries on success, or reader.unparsedLines on malformed lines.
   var line = newStringOfCap(512)
   var entry: HttpLogEntry
   while reader.readLine(line):
     if parseLine(line, entry, format):
+      inc(reader.parsedEntries)
       yield entry
+    else:
+      inc(reader.unparsedLines)
+      if onMalformed != nil:
+        onMalformed(line)
 
 proc streamRawLines*(
   sourcePath: string,
@@ -469,10 +531,13 @@ proc streamLogLines*(
   format: LogFormat = LogFormatAuto,
   pollIntervalMs: int = 100,
   onMalformed: proc(line: string) = nil,
-  shouldStop: proc(): bool = nil
+  shouldStop: proc(): bool = nil,
+  warnOnMalformed: bool = false,
+  diagnosticWriter: proc(msg: string) = nil
 ): StreamStats =
   ## High-level streaming log line processor ingesting from files, STDIN, or gzip.
   ## Parses each line into HttpLogEntry and invokes onEntry callback.
+  ## Gracefully records malformed/unparsed line counts and optionally emits diagnostic warnings to stderr.
   let startTime = getMonoTime()
   let reader = openStreamReader(sourcePath)
   defer: close(reader)
@@ -501,6 +566,12 @@ proc streamLogLines*(
       inc(malformedCount)
       if onMalformed != nil:
         onMalformed(line)
+      if warnOnMalformed:
+        let msg = "[WARN] Line " & $totalLines & ": malformed or unparseable log entry: " & line.strip()
+        if diagnosticWriter != nil:
+          diagnosticWriter(msg)
+        else:
+          stderr.writeLine(msg)
 
   let elapsed = (getMonoTime() - startTime).inMicroseconds.float / 1_000_000.0
   result = StreamStats(

@@ -79,3 +79,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added unit and integration test suite in `tests/t_stream_engine.nim` covering buffered reading, live file tailing, truncation recovery, gzip reading from fixtures (`tests/fixtures/combined.log.gz`), O(1) memory bounds, and throughput benchmarks.
 - Created runnable example in `examples/streaming_and_pipe_ingestion.nim`.
 - Recorded terminal asciicast (`docs/recordings/streaming_and_pipe_ingestion.cast`) and generated animated demo GIF (`docs/images/streaming_and_pipe_ingestion.gif`) with Asciinema and Agg using JetBrainsMono Nerd Font Mono.
+
+##### Category C: Parsing Fault-Tolerance & Edge Cases
+- Implemented robust string sanitizers `sanitizeUtf8` and `sanitizeControlChars` in `src/http_logviewer/parser/formats.nim` to scrub invalid byte sequences, raw null bytes, ANSI escape sequences (`\x1b`), and terminal control characters without crashing.
+- Implemented lookahead quoted token extractors (`parseRequestQuotedString`, `parseRefererQuotedString`, `parseUserAgentQuotedString`) handling both escaped quotes and unescaped interior quotes in URI paths, query strings, and User-Agent headers.
+- Implemented `cleanIpAddress`, `isIpv4Address`, `isIpv6Address`, and `isValidIpAddress` in `src/http_logviewer/parser/formats.nim` supporting IPv4 and IPv6 normalization, stripping port numbers (`:8080`), bracket enclosures (`[2001:db8::1]:443`), interface scope identifiers (`%eth0`), surrounding quotes, and extracting client IPs from comma-separated `X-Forwarded-For` proxy chains.
+- Implemented locale month normalization (`normalizeMonthToken`, `normalizeLogDateString`) supporting German (`Okt`, `Mrz`), Dutch (`mrt`, `mei`), French (`févr.`, `août`), Spanish (`Dic`, `Ene`), and numeric month formats, along with robust support for negative timezone offsets (`-0700`, `-05:00`), named timezones (`UTC`, `GMT`), and ISO fractional seconds in `parseLogDateTime`.
+- Added malformed line tracking to `StreamReader` (`unparsedLines`, `parsedEntries`) and implemented `ParsingDiagnostics` in `src/http_logviewer/parser/engine.nim` supporting success/malformed counters and optional stderr diagnostic warning output.
+- Added comprehensive unit and stress tests in `tests/t_parser.nim` and `tests/t_stream_engine.nim` covering adversarial OWASP payloads, SQL injection strings, raw binary noise, non-log formats (HTML, Java stack traces, SQL, syslog), and truncated lines at every token boundary.
+- Created runnable example in `examples/parsing_fault_tolerance.nim`.
+- Recorded terminal asciicast (`docs/recordings/parsing_fault_tolerance.cast`) and generated animated demo GIF (`docs/images/parsing_fault_tolerance.gif`) with Asciinema and Agg using JetBrainsMono Nerd Font Mono.

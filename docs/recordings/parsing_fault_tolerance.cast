@@ -1,0 +1,10 @@
+{"version":3,"term":{"cols":95,"rows":38},"timestamp":1788479449,"command":"/tmp/parsing_fault_tolerance","title":"Parsing Fault-Tolerance & Edge Cases","env":{"SHELL":"/usr/bin/zsh"}}
+[0.002, "o", "=== http_logviewer: Parsing Fault-Tolerance & Edge Cases ===\r\n\r\n[1] Escaped & Interior Quotes Handling:\r\n"]
+[0.000, "o", "  Path:       /search?q=\"exploit\"&lang=en\r\n  User-Agent: Mozilla/5.0 (Windows NT 10.0; \"Special Build\") Chrome/120.0\r\n\r\n[2] Byte Sanitization (Invalid UTF-8 & ANSI Escapes):\r\n  Raw Input:      /api/v1/user\\0\\e[31madmin\\xFF\r\n  Cleaned Path:   /api/v1/user\\0\\e[31madm\r\n\r\n[3] IP Address Normalization (Ports, Brackets, Scopes):\r\n  Raw: 192.168.1.1:8080                         -> 192.168.1.1              [IPv4]\r\n  Raw: [2001:0db8:85a3::8a2e:0370:7334]:443     -> 2001:0db8:85a3::8a2e:0370:7334 [IPv6]\r\n  Raw: fe80::1ff:fe23:4567:890a%eth0            -> fe80::1ff:fe23:4567:890a [IPv6]\r\n  Raw: \"203.0.113.195\"                          -> 203.0.113.195            [IPv4]\r\n  Raw: 10.0.0.1, 198.51.100.2                   -> 10.0.0.1                 [IPv4]\r\n\r\n[4] International Month & Timezone Normalization:\r\n"]
+[0.000, "o", "  Raw: [12/Okt/2026:14:30:00 +0200]     -> UTC: 2026-10-12 12:30:00\r\n  Raw: [05/mrt/2026:09:15:00 +0100]     -> UTC: 2026-03-05 08:15:00\r\n"]
+[0.000, "o", "  Raw: [18/févr./2026:22:45:00 +0100]  -> UTC: 2026-02-18 21:45:00\r\n  Raw: [25/Dic/2026:18:00:00 -0700]     -> UTC: 2026-12-26 01:00:00\r\n\r\n"]
+[0.000, "o", "[5] Streaming Ingestion with Malformed Line Diagnostics:\r\n"]
+[0.000, "o", "  Parsed Record:  127.0.0.1 GET /index.html [200]\r\n  Parsed Record:  10.0.0.2 POST /api/login [401]\r\n"]
+[0.000, "o", "  Parsed Record:  172.16.0.5 GET /app.js [200]\r\n\r\n  Stream Diagnostics Summary:\r\n    Total Processed: 5\r\n    Parsed Entries:  3\r\n    Malformed Lines: 2\r\n"]
+[0.000, "o", "    Success Ratio:   60.0%\r\n\r\n=== Parsing Fault-Tolerance Complete ===\r\n"]
+[0.000, "x", "0"]
