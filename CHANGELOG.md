@@ -46,3 +46,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added comprehensive unit tests in `tests/t_threat_actor_models.nim` validating enum ordinals, set operations (`incl`, `excl`, union, intersection, difference, complement), bitset safety, and JSON round-tripping.
 - Created executable example in `examples/threat_and_actor_models.nim`.
 - Recorded terminal asciicast (`docs/recordings/threat_and_actor_models.cast`) and generated high-resolution animated GIF (`docs/images/threat_and_actor_models.gif`) with Asciinema and Agg.
+
+##### Category C: Configuration & State Models
+- Defined `ViewerConfig` object in `src/http_logviewer/core/config.nim` with settings for log format, color mode, live tailing, filtering thresholds, and multi-IP grouping mode.
+- Defined presentation and format enums: `OutputFormat` (`FormatStreamTable`, `FormatJson`, `FormatGroupedSummary`), `LogFormat` (`LogFormatAuto`, `LogFormatClf`, `LogFormatCombined`, `LogFormatNginx`, `LogFormatJson`), and `ColorMode` (`ColorModeAuto`, `ColorModeAlways`, `ColorModeNever`) with stringifiers and robust parsers.
+- Defined `FilterCriteria` object supporting minimum threat score threshold, status code whitelist/blacklist, ISO country code whitelist/blacklist, actor category filters, and composite matching helpers (`allowsScore`, `allowsStatus`, `allowsCountry`, `allowsCategory`, `matches`).
+- Implemented default configuration loader `defaultViewerConfig()` with sensible production defaults, configuration validation routines (`validate`, `isValid`), and bidirectional JSON serialization/deserialization (`%`, `parseViewerConfigJson`, `loadViewerConfigJson`).
+- Implemented CLI option mapping structs (`CliOptions`, `CliOptionKind`, `CliOptionDef`) and argument parsers (`parseCliArgs`, `toViewerConfig`, `parseCommandLine`, `parseCommandLineArgs`) in `src/http_logviewer/cli/args.nim`.
+- Implemented unit test suite in `tests/t_config.nim` verifying configuration construction, enum parsing, filtering logic, validation boundary constraints, JSON round-tripping, and CLI flag handling.
+- Created runnable code example in `examples/configuration_and_state_models.nim`.
+- Recorded terminal asciicast (`docs/recordings/configuration_and_state_models.cast`) and generated animated GIF (`docs/images/configuration_and_state_models.gif`) with Asciinema and Agg.

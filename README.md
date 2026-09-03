@@ -80,6 +80,7 @@ High-performance HTTP log viewer and rogue bot detector written in Nim. `http_lo
 - [API Overview](#api-overview)
   - [Core Log Entry Models](#1-core-log-entry-models)
   - [Threat and Actor Domain Models](#2-threat-and-actor-domain-models)
+  - [Configuration and State Models](#3-configuration-and-state-models)
 - [Examples](#examples)
 - [Development and Documentation](#development-and-documentation)
 - [Attribution and License](#attribution-and-license)
@@ -124,7 +125,8 @@ The library exposes clean, type-safe Nim APIs organized into modular layers:
 | :--- | :--- | :--- | :--- |
 | [Log Entry Models](#1-core-log-entry-models) | `http_logviewer/core/types` | `HttpLogEntry`, `HttpMethod` | Normalized representation of parsed HTTP log lines, status codes, and HTTP verbs |
 | [Threat & Actor Models](#2-threat-and-actor-domain-models) | `http_logviewer/core/types` | `ActorCategory`, `ThreatFlag`, `ThreatProfile`, `ActorCluster`, `GeoLocation`, `EnrichedLogRecord` | Threat intelligence scoring, atomic exploit flags, bot detection, and multi-IP correlation clusters |
-| Error Hierarchy | `http_logviewer/core/errors` | `HttpLogViewerError`, `ParseError`, `ThreatAnalysisError` | Robust exception hierarchy derived from `CatchableError` |
+| [Configuration & State Models](#3-configuration-and-state-models) | `http_logviewer/core/config`, `http_logviewer/cli/args` | `ViewerConfig`, `FilterCriteria`, `OutputFormat`, `LogFormat`, `ColorMode`, `CliOptions` | Runtime session configuration, granular traffic filtering criteria, format negotiation, and CLI option mapping |
+| Error Hierarchy | `http_logviewer/core/errors` | `HttpLogViewerError`, `ParseError`, `ThreatAnalysisError`, `ConfigError` | Robust exception hierarchy derived from `CatchableError` |
 
 ---
 
@@ -208,6 +210,54 @@ nim r --path:src examples/threat_and_actor_models.nim
 
 ---
 
+### 3. Configuration and State Models
+
+Manages runtime execution modes, input/output format negotiation, multi-dimensional traffic filtering criteria, CLI option parsing, and bidirectional JSON configuration serialization:
+
+```nim
+import std/options
+import http_logviewer/core/[types, config]
+import http_logviewer/cli/args
+
+# 1. Production defaults
+let cfg = defaultViewerConfig()
+assert cfg.logFilePath == "-"
+assert cfg.colorOutput == true
+assert cfg.outputFormat == FormatStreamTable
+
+# 2. Granular filtering criteria
+let criteria = initFilterCriteria(
+  minThreatScore = 50,
+  statusWhitelist = [401, 403, 404, 500],
+  countryWhitelist = ["US", "DE", "NL"],
+  categories = {CategoryBadActorHacker, CategorySuspicious}
+)
+assert criteria.allowsStatus(404)
+assert not criteria.allowsStatus(200)
+
+# 3. CLI command-line parsing and mapping to ViewerConfig
+let cliArgs = ["-f", "--filter=hacker", "--min-score=70", "--group-actors", "/var/log/nginx/access.log"]
+let runtimeCfg = parseCommandLine(cliArgs)
+assert runtimeCfg.follow == true
+assert runtimeCfg.minThreatScore == 70
+assert runtimeCfg.enableGrouping == true
+```
+
+#### Terminal Demonstration
+
+The recording below illustrates runtime configuration inspection, filter criteria evaluation, CLI flag parsing, JSON round-trip serialization, and validation boundary enforcement in action:
+
+![Configuration and State Models](docs/images/configuration_and_state_models.gif)
+
+> *Source session recording:* [`docs/recordings/configuration_and_state_models.cast`](docs/recordings/configuration_and_state_models.cast) *(recorded with Asciinema, rendered via Agg with JetBrainsMono Nerd Font Mono)*.
+
+Compile and run this example:
+```bash
+nim r --path:src examples/configuration_and_state_models.nim
+```
+
+---
+
 ## Examples
 
 The `examples/` folder provides executable demonstrations of each pipeline layer:
@@ -215,6 +265,7 @@ The `examples/` folder provides executable demonstrations of each pipeline layer
 - [`examples/basic_usage.nim`](examples/basic_usage.nim): Baseline library imports and configuration sanity check.
 - [`examples/log_entry_models.nim`](examples/log_entry_models.nim): Detailed usage of `HttpLogEntry`, `HttpMethod`, stringifiers, and JSON round-tripping.
 - [`examples/threat_and_actor_models.nim`](examples/threat_and_actor_models.nim): Comprehensive threat scoring, geolocation enrichment, and multi-IP cluster correlation.
+- [`examples/configuration_and_state_models.nim`](examples/configuration_and_state_models.nim): Runtime session configuration, granular traffic filter criteria, CLI argument parsing, and JSON configuration serialization.
 - [`examples/pipeline_scaffolding.nim`](examples/pipeline_scaffolding.nim): Cross-module pipeline event envelope demonstration.
 
 ---
