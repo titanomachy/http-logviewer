@@ -1,0 +1,26 @@
+# Build output and caches
+build/*
+!build/.gitkeep
+nimcache/
+*.o
+*.c
+*.dylib
+*.so
+*.dll
+
+# Nimble files
+nimble.paths
+*.nimble-link
+
+# Temporary test and editor files
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+.cache/
+/tmp/
+
+# Editor swap files
+.*.swp
+.*.kate-swp

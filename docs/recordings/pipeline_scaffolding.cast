@@ -1,0 +1,7 @@
+{"version":3,"term":{"cols":80,"rows":16},"timestamp":1788474449,"command":"/tmp/run_demo.sh","title":"http_logviewer - Architecture Scaffolding & Pipeline Demo","env":{"SHELL":"/usr/bin/zsh"}}
+[0.505, "o", "$ ./build/http_logviewer\r\n"]
+[0.000, "o", "Hello, World!\r\nCLI: ready\r\n[analyzer] http_logviewer + enriched + analyzed\r\n"]
+[0.801, "o", "\r\n$ nim r --path:src examples/pipeline_scaffolding.nim\r\n"]
+[0.001, "o", "=== http_logviewer Scaffolding & Pipeline Example ===\r\nInput event: 127.0.0.1 GET /index.html 200\r\n"]
+[0.000, "o", "Pipeline output: [analyzer] 127.0.0.1 GET /index.html 200 + enriched + analyzed\r\nAssertion check: passed successfully\r\n"]
+[1.002, "x", "0"]
