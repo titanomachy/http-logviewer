@@ -2,7 +2,7 @@
 ## Provides ViewerConfig, FilterCriteria, format enums, validation routines,
 ## and serialization hooks.
 
-import std/[strutils, options, json]
+import std/[strutils, options, json, os]
 import errors, types
 
 type
@@ -441,3 +441,111 @@ proc loadViewerConfigJson*(jsonStr: string): ViewerConfig =
     result.validate()
   except JsonParsingError as e:
     raise newException(ConfigError, "Invalid JSON configuration format: " & e.msg)
+
+proc loadViewerConfigToml*(tomlStr: string): ViewerConfig =
+  ## Parses and validates ViewerConfig from a TOML configuration string.
+  result = defaultViewerConfig()
+  for line in tomlStr.splitLines():
+    let trimmed = line.strip()
+    if trimmed.len == 0 or trimmed.startsWith("#") or trimmed.startsWith(";"):
+      continue
+    if trimmed.startsWith("[") and trimmed.endsWith("]"):
+      continue
+    let eqPos = trimmed.find('=')
+    if eqPos < 0:
+      continue
+    let rawKey = trimmed[0 ..< eqPos].strip().toLowerAscii().replace("_", "").replace("-", "")
+    var rawVal = trimmed[eqPos + 1 .. ^1].strip()
+
+    if not (rawVal.startsWith("\"") or rawVal.startsWith("'")):
+      let hashPos = rawVal.find('#')
+      if hashPos >= 0:
+        rawVal = rawVal[0 ..< hashPos].strip()
+
+    proc unquote(s: string): string =
+      if (s.startsWith("\"") and s.endsWith("\"")) or (s.startsWith("'") and s.endsWith("'")):
+        if s.len >= 2: s[1 .. ^2] else: ""
+      else:
+        s
+
+    case rawKey
+    of "logfilepath", "logfile", "path":
+      result.logFilePath = unquote(rawVal)
+    of "follow":
+      result.follow = (rawVal.toLowerAscii() in ["true", "1", "yes", "on"])
+    of "colormode", "color":
+      result.colorMode = parseColorMode(unquote(rawVal))
+      result.colorOutput = (result.colorMode != ColorModeNever)
+    of "coloroutput":
+      result.colorOutput = (rawVal.toLowerAscii() in ["true", "1", "yes", "on"])
+      if not result.colorOutput:
+        result.colorMode = ColorModeNever
+    of "outputformat", "format":
+      result.outputFormat = parseOutputFormat(unquote(rawVal))
+    of "logformat":
+      result.logFormat = parseLogFormat(unquote(rawVal))
+    of "filtercategory", "category":
+      let catStr = unquote(rawVal)
+      if catStr.len > 0 and catStr.toLowerAscii() != "all":
+        result.filterCategory = some(parseActorCategory(catStr))
+      else:
+        result.filterCategory = none(ActorCategory)
+    of "minthreatscore", "minscore", "threatscore":
+      try:
+        result.minThreatScore = parseInt(rawVal)
+      except ValueError:
+        raise newException(ConfigError, "Invalid integer for min_threat_score in TOML: '" & rawVal & "'")
+    of "statuscodes", "statuscodefilter", "status":
+      if rawVal.startsWith("[") and rawVal.endsWith("]"):
+        let inner = rawVal[1 .. ^2].strip()
+        result.statusCodeFilter = @[]
+        if inner.len > 0:
+          for part in inner.split(','):
+            let pTrim = part.strip()
+            if pTrim.len > 0:
+              try:
+                result.statusCodeFilter.add(parseInt(pTrim))
+              except ValueError:
+                raise newException(ConfigError, "Invalid status code integer in TOML: '" & pTrim & "'")
+    of "countrycodes", "countrywhitelist", "countries":
+      if rawVal.startsWith("[") and rawVal.endsWith("]"):
+        let inner = rawVal[1 .. ^2].strip()
+        result.filters.countryWhitelist = @[]
+        if inner.len > 0:
+          for part in inner.split(','):
+            let pTrim = unquote(part.strip())
+            if pTrim.len > 0:
+              result.filters.countryWhitelist.add(pTrim.toUpperAscii())
+    of "geodbpath", "geoipdb", "mmdb":
+      let pathVal = unquote(rawVal)
+      if pathVal.len > 0:
+        result.geoDbPath = some(pathVal)
+    of "enablegrouping", "groupactors", "grouping":
+      result.enableGrouping = (rawVal.toLowerAscii() in ["true", "1", "yes", "on"])
+    of "correlationwindowseconds", "correlationwindow", "window":
+      try:
+        result.correlationWindowSeconds = parseInt(rawVal)
+      except ValueError:
+        raise newException(ConfigError, "Invalid integer for correlation_window_seconds in TOML: '" & rawVal & "'")
+    else:
+      discard
+  result.syncFilters()
+  result.validate()
+
+proc loadViewerConfigFile*(path: string): ViewerConfig =
+  ## Loads and validates ViewerConfig from either a .json or .toml file path.
+  ## Raises ConfigError if file is not found or malformed.
+  if not fileExists(path):
+    raise newException(ConfigError, "Configuration file not found: '" & path & "'")
+  let content = readFile(path)
+  let norm = path.toLowerAscii()
+  if norm.endsWith(".json"):
+    return loadViewerConfigJson(content)
+  elif norm.endsWith(".toml"):
+    return loadViewerConfigToml(content)
+  else:
+    try:
+      return loadViewerConfigJson(content)
+    except ConfigError:
+      return loadViewerConfigToml(content)
+

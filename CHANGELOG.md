@@ -218,3 +218,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Created standalone runnable code example in `examples/grouped_actor_view.nim`.
 - Recorded terminal asciicast (`docs/recordings/grouped_actor_view.cast`) and rendered high-resolution animated demo GIF (`docs/images/grouped_actor_view.gif`) with Asciinema and Agg using JetBrainsMono Nerd Font Mono.
 
+#### Phase 07: CLI Tool, Library API & Pipeline Integration
+##### Category A: CLI Options & Argument Parser
+- Implemented comprehensive CLI argument parser (`parseCliArgs`, `parseCommandLine`, `parseCommandLineArgs`) in `src/http_logviewer/cli/args.nim` supporting all specified flags: positional `logfile` (and stdin `-`), live follow mode (`-f`, `--follow`), category filtering (`--filter=<real|bot|hacker|all>`), threat score threshold (`--min-score=<0-100>`), multi-IP correlation grouping (`--group-actors`), HTTP status code filtering (`--status=<codes>`), custom GeoIP MMDB path (`--geoip-db=<path>`), ANSI disable flag (`--no-color`), and NDJSON output mode (`--json`) (Item 01).
+- Implemented detailed `--help` and `--version` documentation (`helpText`, `versionText`) detailing syntax, descriptions, environment variables (`NO_COLOR`), configuration file discovery paths, exit codes, and usage examples (Item 02).
+- Implemented graceful POSIX signal handling for `SIGINT` (Ctrl+C) via `handleSigInt` and `setControlCHook`, cleanly terminating streaming loops and rendering the final session summary banner before process exit (Item 03).
+- Implemented input path and permission validation (`validateInputPath`) returning standard POSIX exit codes (0 = clean exit, 1 = user syntax/path error, 2 = fatal execution error/unreadable file), rejecting non-existent files and directories before pipeline initialization (Item 04).
+- Implemented configuration file support (`loadViewerConfigToml`, `loadViewerConfigFile`, `discoverConfigFile`) loading settings from `.http_logviewer.toml` or `.json` with automatic hierarchical discovery in current working directory and `$HOME`, guaranteeing CLI arguments strictly override configuration file values (Item 05).
+- Created automated CLI binary test suite in `tests/t_cli_args.nim` integrated into `tests/test_all.nim` executing `build/http_logviewer` with various flag permutations, verifying exit codes (0, 1, 2), `--help`, `--version`, `--no-color`, `--json`, `--filter`, `--status`, `--group-actors`, and `--config` (Item 06).
+- Created standalone runnable code example in `examples/cli_options_and_argument_parser.nim`.
+- Recorded terminal asciicast (`docs/recordings/cli_options_and_argument_parser.cast`) and rendered high-resolution animated demo GIF (`docs/images/cli_options_and_argument_parser.gif`) with Asciinema and Agg using JetBrainsMono Nerd Font Mono.
+

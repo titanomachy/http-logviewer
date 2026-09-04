@@ -21,6 +21,7 @@ type
   ## Intermediate structured representation of parsed CLI options
   CliOptions* = object
     logFilePath*: Option[string]
+    configPath*: Option[string]
     follow*: bool
     colorOutput*: bool
     colorMode*: Option[ColorMode]
@@ -54,6 +55,7 @@ proc helpText*(): string =
 Usage:
   http_logviewer [options] [LOGFILE]
   tail -f /var/log/nginx/access.log | http_logviewer [options]
+  cat /var/log/apache2/access.log | http_logviewer --filter=hacker --no-color
 
 Arguments:
   LOGFILE                         Path to HTTP access log file (use '-' for standard input)
@@ -72,14 +74,28 @@ Options:
   --no-color                      Shortcut for --color=never
   --json                          Shortcut for --format=json
   --window=<seconds>              Sliding correlation window for multi-IP grouping (default: 1800)
+  -c, --config=<path>             Path to configuration file (.json or .toml)
   -h, --help                      Show this help manual and exit
   -v, --version                   Display version information and exit
+
+Examples:
+  http_logviewer /var/log/nginx/access.log
+  http_logviewer -f /var/log/nginx/access.log --status=404,500
+  tail -f /var/log/nginx/access.log | http_logviewer --filter=hacker
+  http_logviewer --group-actors --min-score=50 access.log
+  cat access.log | http_logviewer --json > enriched_events.ndjson
+
+Exit Codes:
+  0                               Success / clean exit
+  1                               User error (invalid parameters or missing file)
+  2                               Fatal error (I/O, permissions, or pipeline failure)
 """
 
 proc initCliOptions*(): CliOptions =
   ## Initializes an empty CliOptions structure with default values.
   CliOptions(
     logFilePath: none(string),
+    configPath: none(string),
     follow: false,
     colorOutput: true,
     colorMode: none(ColorMode),
@@ -138,6 +154,13 @@ proc parseCliArgs*(args: openArray[string]): CliOptions =
       else:
         raise newException(ConfigError, "Unexpected extra positional argument: '" & p.key & "'")
     of cmdLongOption, cmdShortOption:
+      if p.key.len == 0:
+        if p.kind == cmdShortOption:
+          if result.logFilePath.isNone:
+            result.logFilePath = some("-")
+          else:
+            raise newException(ConfigError, "Unexpected extra positional argument: '-'")
+        continue
       case p.key.toLowerAscii()
       of "f", "follow":
         result.follow = true
@@ -191,6 +214,9 @@ proc parseCliArgs*(args: openArray[string]): CliOptions =
         result.colorOutput = false
       of "json":
         result.outputFormat = some(FormatJson)
+      of "c", "config":
+        let val = p.fetchValue("--config")
+        result.configPath = some(val)
       of "window", "correlation-window":
         let val = p.fetchValue("--window")
         try:
@@ -206,17 +232,62 @@ proc parseCliArgs*(args: openArray[string]): CliOptions =
       else:
         raise newException(ConfigError, "Unknown option: '--" & p.key & "'. Run with --help for usage instructions.")
 
+proc discoverConfigFile*(): Option[string] =
+  ## Searches current directory and user home directory for configuration files (.toml or .json).
+  let cwd = getCurrentDir()
+  let candidates = [
+    cwd / ".http_logviewer.toml",
+    cwd / ".http_logviewer.json",
+    getHomeDir() / ".http_logviewer.toml",
+    getHomeDir() / ".http_logviewer.json"
+  ]
+  for path in candidates:
+    if fileExists(path):
+      return some(path)
+  return none(string)
+
+proc validateInputPath*(path: string): tuple[valid: bool, errorCode: int, errorMsg: string] =
+  ## Validates an input file path, returning standard exit codes:
+  ## 0 = valid / clean (or standard input)
+  ## 1 = user error (file does not exist or is a directory)
+  ## 2 = fatal error (permission denied or I/O error)
+  if path == "-" or path.len == 0:
+    return (valid: true, errorCode: 0, errorMsg: "")
+  if not fileExists(path):
+    if dirExists(path):
+      return (valid: false, errorCode: 1, errorMsg: "Specified path is a directory, not a log file: '" & path & "'")
+    return (valid: false, errorCode: 1, errorMsg: "Log file not found: '" & path & "'")
+  var f: File
+  if not open(f, path, fmRead):
+    return (valid: false, errorCode: 2, errorMsg: "Permission denied reading log file: '" & path & "'")
+  close(f)
+  return (valid: true, errorCode: 0, errorMsg: "")
+
 proc toViewerConfig*(opts: CliOptions): ViewerConfig =
   ## Converts structured CliOptions into a validated ViewerConfig.
-  result = defaultViewerConfig()
+  ## If a configuration file is specified via --config or discovered automatically,
+  ## its settings serve as the foundation, with explicit CLI options overriding them.
+  if opts.configPath.isSome:
+    result = loadViewerConfigFile(opts.configPath.get())
+  else:
+    let autoFile = discoverConfigFile()
+    if autoFile.isSome:
+      result = loadViewerConfigFile(autoFile.get())
+    else:
+      result = defaultViewerConfig()
   
   if opts.logFilePath.isSome:
     result.logFilePath = opts.logFilePath.get()
   
-  result.follow = opts.follow
-  result.colorOutput = opts.colorOutput
+  if opts.follow:
+    result.follow = true
+
   if opts.colorMode.isSome:
     result.colorMode = opts.colorMode.get()
+    result.colorOutput = (result.colorMode != ColorModeNever)
+  elif not opts.colorOutput:
+    result.colorOutput = false
+    result.colorMode = ColorModeNever
   
   if opts.outputFormat.isSome:
     result.outputFormat = opts.outputFormat.get()
@@ -236,17 +307,16 @@ proc toViewerConfig*(opts: CliOptions): ViewerConfig =
   if opts.geoDbPath.isSome:
     result.geoDbPath = opts.geoDbPath
   
-  result.enableGrouping = opts.enableGrouping
+  if opts.enableGrouping:
+    result.enableGrouping = true
   
   if opts.correlationWindowSeconds.isSome:
     result.correlationWindowSeconds = opts.correlationWindowSeconds.get()
   
-  result.filters = initFilterCriteria(
-    minThreatScore = result.minThreatScore,
-    statusWhitelist = result.statusCodeFilter,
-    countryWhitelist = opts.countryCodes,
-    categoryFilter = result.filterCategory
-  )
+  if opts.countryCodes.len > 0:
+    result.filters.countryWhitelist = opts.countryCodes
+
+  result.syncFilters()
   result.validate()
 
 proc parseCommandLine*(args: openArray[string]): ViewerConfig =

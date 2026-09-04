@@ -17,4 +17,5 @@ import t_useragents
 import t_classifier
 import t_correlator
 import t_renderer
+import t_cli_args
 import test1

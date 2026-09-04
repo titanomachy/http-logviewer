@@ -96,6 +96,7 @@ High-performance HTTP log viewer and rogue bot detector written in Nim. `http_lo
   - [Background-Colored HTTP Status Highlighting](#16-background-colored-http-status-highlighting)
   - [Streaming Log Output & Formatted Tables](#17-streaming-log-output--formatted-tables)
   - [Grouped Actor View & Anomaly Drill-down](#18-grouped-actor-view--anomaly-drill-down)
+  - [CLI Options & Argument Parser](#19-cli-options--argument-parser)
 - [Examples](#examples)
 - [Development and Documentation](#development-and-documentation)
 - [Attribution and License](#attribution-and-license)
@@ -1112,6 +1113,66 @@ nim r --path:src examples/grouped_actor_view.nim
 
 ---
 
+### 19. CLI Options & Argument Parser
+
+Provides robust command-line argument parsing, multi-format configuration file loading (.toml and .json), input validation with standard UNIX exit codes, graceful SIGINT signal handling, and session summary generation:
+
+- **Command-Line Option Parser (`parseCliArgs`, `parseCommandLine`, `parseCommandLineArgs`)**: Built on zero-allocation token scanning, parsing both flags and value options:
+  - `LOGFILE`: Path to input log file (or `-` for standard input stream / pipes)
+  - `-f, --follow`: Live file tailing as new lines are appended
+  - `--filter=<category>`: Filter events by visitor category (`real`, `bot`, `scraper`, `hacker`, `suspicious`, `all`)
+  - `-m, --min-score=<0-100>`: Filter requests with threat score >= threshold
+  - `-g, --group-actors`: Enable multi-IP botnet correlation and group summary display
+  - `--status=<codes>`: Filter by HTTP status codes (comma-separated, e.g. `404,500`)
+  - `--country=<codes>`: Filter by ISO country codes (comma-separated, e.g. `US,DE,NL`)
+  - `--geoip-db=<path>`: Custom path to GeoIP MMDB database file
+  - `--format=<format>`: Output presentation (`stream`, `json`, `grouped`)
+  - `--log-format=<format>`: Input format auto-detection or override (`auto`, `clf`, `combined`, `nginx`, `json`)
+  - `--color=<mode>`: Terminal color policy (`auto`, `always`, `never`)
+  - `--no-color`: Monochromatic output shortcut
+  - `--json`: Structured NDJSON output shortcut
+  - `--window=<seconds>`: Sliding correlation window for multi-IP grouping (default: 1800)
+  - `-c, --config=<path>`: Path to configuration file (.json or .toml)
+  - `-h, --help`: Display complete usage manual and examples
+  - `-v, --version`: Display canonical version information
+- **Help & Version Documentation (`helpText`, `versionText`)**: Comprehensive help text detailing usage patterns, supported flags, practical pipeline piping examples, and standard exit code definitions.
+- **Graceful Signal Handling & Session Summary (`handleSigInt`, `runPipeline`)**: Intercepts `SIGINT` (Ctrl+C) via `setControlCHook`, stopping the ingestion stream cleanly without abrupt stack traces. Automatically outputs a complete session traffic summary banner (`renderSummaryBanner`) and correlated actor cluster table before terminating.
+- **Path & Permission Validation (`validateInputPath`)**: Validates input log and GeoIP database paths before launching ingestion pipelines, returning standardized exit codes:
+  - `0`: Clean execution / success (or `--help`/`--version`)
+  - `1`: User configuration error (invalid parameters, missing log file, directory given instead of file)
+  - `2`: Fatal I/O or permissions failure (unreadable file, access denied)
+- **Configuration File Support (`loadViewerConfigToml`, `loadViewerConfigJson`, `loadViewerConfigFile`, `discoverConfigFile`)**: Supports project-level or user-level configuration files (`.http_logviewer.toml` or `.http_logviewer.json`), with automatic discovery in the current working directory and `$HOME`. Command-line arguments seamlessly override configuration file settings.
+
+```nim
+import http_logviewer/cli/args
+import http_logviewer
+
+# 1. Parse command-line arguments into validated ViewerConfig
+let cfg = parseCommandLine(["access.log", "--filter=hacker", "--no-color"])
+
+# 2. Validate input path before streaming
+let check = validateInputPath(cfg.logFilePath)
+if not check.valid:
+  stderr.writeLine(check.errorMsg)
+  quit(check.errorCode)
+
+# 3. Execute pipeline with graceful signal handling
+discard runPipeline(cfg)
+```
+
+The recording below demonstrates CLI argument parsing, help manual display, simulated signal interruption with traffic summary, path validation, and TOML configuration loading:
+
+![CLI Options & Argument Parser](docs/images/cli_options_and_argument_parser.gif)
+
+> *Source session recording:* [`docs/recordings/cli_options_and_argument_parser.cast`](docs/recordings/cli_options_and_argument_parser.cast) *(recorded with Asciinema, rendered via Agg with JetBrainsMono Nerd Font Mono)*.
+
+Compile and run this example:
+```bash
+nim r --path:src examples/cli_options_and_argument_parser.nim
+```
+
+---
+
 ## Examples
 
 The `examples/` folder provides executable demonstrations of each pipeline layer:
@@ -1135,6 +1196,7 @@ The `examples/` folder provides executable demonstrations of each pipeline layer
 - [`examples/status_code_highlighting.nim`](examples/status_code_highlighting.nim): Background-colored HTTP status code badges (404, 5xx, 2xx, 3xx), terminal color auto-detection, monochromatic fallbacks, visitor intent badges, and monospace visual width alignment.
 - [`examples/streaming_terminal_ui.nim`](examples/streaming_terminal_ui.nim): Streaming log output, formatted tables, adaptive width truncation, status ticker, URI highlighting, and JSON emission.
 - [`examples/grouped_actor_view.nim`](examples/grouped_actor_view.nim): Grouped multi-IP actor view, cluster cards, chronological attack timelines, and automated security incident reports (Markdown, Fail2ban, UFW, iptables).
+- [`examples/cli_options_and_argument_parser.nim`](examples/cli_options_and_argument_parser.nim): CLI options, argument parser, configuration file support (.toml/.json), input path validation, and graceful signal handling.
 - [`examples/pipeline_scaffolding.nim`](examples/pipeline_scaffolding.nim): Cross-module pipeline event envelope demonstration.
 
 ---
