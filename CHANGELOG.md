@@ -238,4 +238,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Created standalone runnable code example in `examples/library_usage.nim` demonstrating programmatic consumption of `http_logviewer` as an embedded library (Item 05).
 - Recorded terminal asciicast (`docs/recordings/library_usage.cast`) and rendered high-resolution animated demo GIF (`docs/images/library_usage.gif`) with Asciinema and Agg using JetBrainsMono Nerd Font Mono.
 
+##### Category C: End-to-End Testing & Sample Log Fixtures
+- Ingested and validated genuine Apache and Nginx web traffic fixtures (`tests/fixtures/combined.log`), verifying accurate field parsing across desktop and mobile browsers, HTTP methods, and status codes (200, 301, 304, 404, 500) with zero false-positive hacker classifications for real users and legitimate search engine crawlers (Item 01).
+- Created comprehensive attack log fixture (`tests/fixtures/attacks.log`) covering OWASP Top 10 vectors: SQL injection (`UNION SELECT`, `' OR '1'='1`), directory traversal (`../../../../etc/passwd`, `%2e%2e%2f`), sensitive configuration probes (`.env`, `.git/config`, `/actuator/env`, `docker-compose.yml`, `.aws/credentials`, `id_rsa`), CMS exploits (`wp-login.php`, `xmlrpc.php`, `phpmyadmin`), command injection (`;id`, `$(whoami)`), Log4j / JNDI payloads (`${jndi:ldap://...}`), and offensive scanner User-Agents (`sqlmap`, `nikto`, `nuclei`, `gobuster`, `masscan`) (Item 02).
+- Validated distributed multi-IP botnet attack log fixture (`tests/fixtures/distributed_botnet.log`) containing 5 distinct rotating IP addresses executing coordinated WordPress and endpoint exploits with identical signatures within a rapid succession window (Item 03).
+- Implemented comprehensive end-to-end integration test suite (`tests/t_e2e_integration.nim`) integrated into `tests/test_all.nim` verifying 100% classification precision on attack vectors and zero false positive hacker classifications on clean traffic across all sample fixtures (Item 04).
+- Validated high-visibility ANSI background red color badges for HTTP status code 404 (`\e[41;97;1m 404 \e[0m`) and related status badges (500, 403, 200, 301) across `formatStatusCode`, `renderStreamLine`, and live CLI binary execution on `attacks.log` (Item 05).
+- Validated multi-IP actor grouping and correlation on `distributed_botnet.log`, verifying accurate unification into a single `ActorCluster`, residential proxy rotation detection, cluster risk metrics calculation, grouped summary tables, cluster detail cards, chronological timelines, and CLI binary execution with `--group-actors` (Item 06).
+- Created standalone runnable code example in `examples/end_to_end_pipeline.nim`.
+- Recorded terminal asciicast (`docs/recordings/end_to_end_pipeline.cast`) and rendered high-resolution animated demo GIF (`docs/images/end_to_end_pipeline.gif`) with Asciinema and Agg using JetBrainsMono Nerd Font Mono.
+
 

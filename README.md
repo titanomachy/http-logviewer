@@ -98,6 +98,7 @@ High-performance HTTP log viewer and rogue bot detector written in Nim. `http_lo
   - [Grouped Actor View & Anomaly Drill-down](#18-grouped-actor-view--anomaly-drill-down)
   - [CLI Options & Argument Parser](#19-cli-options--argument-parser)
   - [Public Library API & Programmatic Consumption](#20-public-library-api--programmatic-consumption)
+  - [End-to-End Pipeline & Sample Log Fixtures](#21-end-to-end-pipeline--sample-log-fixtures)
 - [Examples](#examples)
 - [Development and Documentation](#development-and-documentation)
 - [Attribution and License](#attribution-and-license)
@@ -160,6 +161,7 @@ The library exposes clean, type-safe Nim APIs organized into modular layers:
 | [Grouped Actor View](#18-grouped-actor-view--anomaly-drill-down) | `http_logviewer/renderer/terminal` | `sortClustersByRisk`, `renderGroupedSummaryTable`, `renderActorClusterCard`, `renderGroupedClusters`, `renderActorTimeline`, `renderActorDetail`, `generateIncidentReport`, `IncidentReportFormat` | Correlated multi-IP actor summary tables, cluster detail cards, chronological multi-IP attack timelines, and automated incident reports (Markdown, plain text, Fail2ban, UFW, iptables) |
 | [CLI Options & Argument Parser](#19-cli-options--argument-parser) | `http_logviewer/cli/args` | `parseCommandLine`, `parseCommandLineArgs`, `validateInputPath`, `loadViewerConfigToml`, `helpText`, `versionText` | Complete CLI option parser, TOML/JSON configuration loading, exit code handling, and usage documentation |
 | [Public Library API & Programmatic Consumption](#20-public-library-api--programmatic-consumption) | `http_logviewer` | `parseLine`, `enrichGeo`, `enrichWithGeo`, `analyzeEntry`, `analyzeRequest`, `correlateStream`, `correlateEvent`, `enrichAndAnalyze` | Clean top-level library API for embedding into third-party Nim applications with zero global mutable state and full thread-safety |
+| [End-to-End Pipeline & Fixtures](#21-end-to-end-pipeline--sample-log-fixtures) | `tests/fixtures/`, `http_logviewer` | `combined.log`, `attacks.log`, `distributed_botnet.log`, `formatStatusCode`, `renderStreamLine` | End-to-end pipeline verification across sample fixtures, zero false positive genuine traffic, OWASP attack classification, background red 404 badges, and multi-IP botnet correlation |
 | Error Hierarchy | `http_logviewer/core/errors` | `HttpLogViewerError`, `ParseError`, `ThreatAnalysisError`, `ConfigError` | Robust exception hierarchy derived from `CatchableError` |
 
 ---
@@ -1223,10 +1225,59 @@ nim r --path:src examples/library_usage.nim
 
 ---
 
+### 21. End-to-End Pipeline & Sample Log Fixtures
+
+Comprehensive end-to-end pipeline verification across realistic Apache/Nginx web logs, multi-vector exploit probes, and coordinated multi-IP botnet campaigns:
+
+- **Genuine Traffic Ingestion (`tests/fixtures/combined.log`)**: Validates real-world Apache and Nginx traffic across desktop and mobile browsers, ensuring accurate parsing of all fields and zero false-positive hacker classifications for innocent users and search engine crawlers.
+- **Attack Payload Detection (`tests/fixtures/attacks.log`)**: Validates OWASP Top 10 attack detection across SQL injection (`UNION SELECT`, `' OR '1'='1`), directory traversal (`../../../../etc/passwd`, `%2e%2e%2f`), sensitive configuration probes (`.env`, `.git/config`, `/actuator/env`, `docker-compose.yml`, `id_rsa`), CMS exploits (`wp-login.php`, `xmlrpc.php`, `phpmyadmin`), command injection (`;id`, `$(whoami)`), Log4j / JNDI payloads (`${jndi:ldap://...}`), and offensive security scanners (`sqlmap`, `nikto`, `nuclei`, `gobuster`, `masscan`).
+- **Distributed Botnet Clustering (`tests/fixtures/distributed_botnet.log`)**: Ingests rotating IP fleets scanning identical WordPress and configuration endpoints within seconds, automatically correlating nodes into unified clusters and triggering residential proxy rotation alerts.
+- **High-Visibility ANSI 404 Highlighting**: Emits high-contrast bright white on bold red background badges (`\e[41;97;1m 404 \e[0m`) on error lines when ANSI is active, cleanly reverting to plain text when output is piped or when `--no-color` is enabled.
+- **Correlated Forensic Reporting**: Validates grouped summary tables, detailed actor profile cards, chronological attack timelines, and automated mitigation rule generation (UFW, Fail2ban, iptables).
+
+```nim
+import http_logviewer
+import http_logviewer/parser/formats
+import http_logviewer/analyzer/[classifier, correlator]
+import http_logviewer/renderer/[styles, terminal]
+
+# 1. Evaluate genuine traffic without false positives
+var genuineEntry: HttpLogEntry
+discard parseCombinedLine("93.184.216.34 - - [14/Jul/2026:08:32:10 +0000] \"GET /assets/style.css HTTP/2.0\" 200 15420 \"-\" \"Mozilla/5.0\"", genuineEntry)
+let genuineThreat = evaluateThreat(genuineEntry)
+assert genuineThreat.category == CategoryRealUser
+
+# 2. Detect hostile exploit probes
+var attackEntry: HttpLogEntry
+discard parseCombinedLine("185.220.101.5 - - [04/Sep/2026:03:00:01 +0200] \"GET /.env HTTP/1.1\" 404 162 \"-\" \"curl/7.88.1\"", attackEntry)
+let attackThreat = evaluateThreat(attackEntry)
+assert ThreatSensitiveFile in attackThreat.flags
+assert attackThreat.category == CategoryBadActorHacker
+
+# 3. High-visibility 404 badge formatting
+echo formatStatusCode(404, colorize = true) # \e[41;97;1m 404 \e[0m
+```
+
+#### Terminal Demonstration
+
+The recording below demonstrates end-to-end sample fixtures validation, genuine traffic vs. OWASP attack classification, background red 404 badge verification, and multi-IP botnet correlation:
+
+![End-to-End Pipeline & Sample Log Fixtures](docs/images/end_to_end_pipeline.gif)
+
+> *Source session recording:* [`docs/recordings/end_to_end_pipeline.cast`](docs/recordings/end_to_end_pipeline.cast) *(recorded with Asciinema, rendered via Agg with JetBrainsMono Nerd Font Mono)*.
+
+Compile and run this example:
+```bash
+nim r --path:src examples/end_to_end_pipeline.nim
+```
+
+---
+
 ## Examples
 
 The `examples/` folder provides executable demonstrations of each pipeline layer:
 
+- [`examples/end_to_end_pipeline.nim`](examples/end_to_end_pipeline.nim): End-to-end sample fixtures validation, genuine traffic vs. OWASP attack classification, background red 404 badge verification, and multi-IP botnet correlation.
 - [`examples/basic_usage.nim`](examples/basic_usage.nim): Baseline library imports and configuration sanity check.
 - [`examples/log_entry_models.nim`](examples/log_entry_models.nim): Detailed usage of `HttpLogEntry`, `HttpMethod`, stringifiers, and JSON round-tripping.
 - [`examples/threat_and_actor_models.nim`](examples/threat_and_actor_models.nim): Comprehensive threat scoring, geolocation enrichment, and multi-IP cluster correlation.
