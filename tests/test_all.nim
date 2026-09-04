@@ -11,4 +11,5 @@ import t_parser
 import t_stream_engine
 import t_geoip
 import t_flags
+import t_bogon_private_ip
 import test1

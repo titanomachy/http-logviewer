@@ -86,6 +86,7 @@ High-performance HTTP log viewer and rogue bot detector written in Nim. `http_lo
   - [Parsing Fault-Tolerance & Edge Cases](#6-parsing-fault-tolerance--edge-cases)
   - [IP-to-Country Lookup & GeoIP Enrichment](#7-ip-to-country-lookup--geoip-enrichment)
   - [Unicode Regional Indicator Flags & Country Metadata](#8-unicode-regional-indicator-flags--country-metadata)
+  - [Bogon, Private, and Loopback IP Handling](#9-bogon-private-and-loopback-ip-handling)
 - [Examples](#examples)
 - [Development and Documentation](#development-and-documentation)
 - [Attribution and License](#attribution-and-license)
@@ -136,6 +137,7 @@ The library exposes clean, type-safe Nim APIs organized into modular layers:
 | [Parsing Fault-Tolerance & Edge Cases](#6-parsing-fault-tolerance--edge-cases) | `http_logviewer/parser/formats`, `http_logviewer/parser/engine` | `sanitizeUtf8`, `sanitizeControlChars`, `cleanIpAddress`, `normalizeLogDateString`, `ParsingDiagnostics` | Sanitization of invalid UTF-8 bytes and ANSI escapes, interior quote recovery, IPv4/IPv6 port stripping, multi-locale timestamps, and streaming diagnostics |
 | [IP-to-Country Lookup & GeoIP](#7-ip-to-country-lookup--geoip-enrichment) | `http_logviewer/enrichment/geoip`, `http_logviewer/enrichment/flags` | `GeoIpProvider`, `GeoIpEngine`, `MmdbGeoIpProvider`, `CidrGeoIpProvider`, `LruCache`, `isoToFlagEmoji` | High-performance IP geolocation, offline MMDB parser, fallback CIDR database, LRU memory cache, and automatic database discovery |
 | [Unicode Flags & Country Metadata](#8-unicode-regional-indicator-flags--country-metadata) | `http_logviewer/enrichment/flags` | `isoToFlagEmoji`, `getCountryName`, `IsoCountryCodes`, `flagTerminalFallback`, `formatCountryFlag`, `formatCountryBadge` | Algorithmic ISO-3166-1 flag emoji generation, 249 English country names, special pseudo-code mapping (EU, AP, A1, A2, T1), and terminal ASCII fallback |
+| [Bogon & Private IPs](#9-bogon-private-and-loopback-ip-handling) | `http_logviewer/enrichment/bogon` | `isRfc1918Private`, `isLoopbackIp`, `isLinkLocalIp`, `isCgnatIp`, `isUniqueLocalIp`, `isMulticastIp`, `isBogonIp`, `classifyIpSubnet`, `formatLocalTrafficMarker`, `makeEnrichedPrivateLocation` | Subnet classification, RFC 1918 private IPv4 ranges, loopback/localhost, link-local, carrier-grade NAT, multicast, bogon/reserved networks, and local traffic markers (`🏠 Local / Private LAN`) |
 | Error Hierarchy | `http_logviewer/core/errors` | `HttpLogViewerError`, `ParseError`, `ThreatAnalysisError`, `ConfigError` | Robust exception hierarchy derived from `CatchableError` |
 
 ---
@@ -535,6 +537,67 @@ nim r --path:src examples/flags_and_country_metadata.nim
 
 ---
 
+### 9. Bogon, Private, and Loopback IP Handling
+
+Traffic originating from internal networks, proxy relays, load balancers, or loopback addresses requires distinct handling from public routable internet traffic. `http_logviewer` provides rigorous, high-precision detection of RFC 1918 private IPv4 ranges, loopback, link-local, carrier-grade NAT (CGNAT), IPv6 Unique Local Addresses (ULA), multicast groups, and bogon/unroutable address blocks, presenting distinct visual badges (`🏠 Local / Private LAN`) with zero database lookup overhead:
+
+- **RFC 1918 Private IPv4 Ranges**: Exact boundary validation for `10.0.0.0/8` (`10.0.0.0` - `10.255.255.255`), `172.16.0.0/12` (`172.16.0.0` - `172.31.255.255`), and `192.168.0.0/16` (`192.168.0.0` - `192.168.255.255`), including IPv4-mapped IPv6 formats (e.g. `::ffff:192.168.1.1`).
+- **Loopback & Host Resolution**: Identifies IPv4 loopback across the entire `127.0.0.0/8` block (`127.0.0.1` - `127.255.255.255`), IPv6 loopback (`::1`, `0:0:0:0:0:0:0:1`, `[::1]`), and `localhost` aliases.
+- **Link-Local Autoconfiguration**: Detects IPv4 link-local (`169.254.0.0/16`, RFC 3927) and IPv6 link-local unicast (`fe80::/10`, RFC 4291) with network interface scope trimming (e.g. `fe80::1%eth0`).
+- **Carrier-Grade NAT & IPv6 ULA**: Classifies CGNAT / Shared Address Space (`100.64.0.0/10`, RFC 6598) and IPv6 Unique Local Addresses (`fc00::/7`, RFC 4193).
+- **Multicast, Broadcast & Bogon Ranges**: Identifies IPv4 multicast (`224.0.0.0/4`), IPv6 multicast (`ff00::/8`), limited broadcast (`255.255.255.255`), current network (`0.0.0.0/8`), Class E reserved (`240.0.0.0/4`), documentation networks (`192.0.2.0/24`, `198.51.100.0/24`, `203.0.113.0/24`, `2001:db8::/32`), benchmarking, and IPv6 discard-only/unspecified.
+- **Distinct Local Traffic Markers & Badges**: Exposes `formatLocalTrafficMarker` and `formatPrivateIpBadge` rendering `🏠 Local / Private LAN` (or ASCII `[LAN] Local / Private LAN`), plus optional detailed topology descriptions.
+- **GeoIpEngine Short-Circuiting**: Intercepts private, loopback, and bogon IPs instantly at the engine boundary, returning `makePrivateLocation` with `flagEmoji = "🏠"`, `countryCode = "LO"`, and `isPrivate = true` with zero disk MMDB queries.
+
+```nim
+import http_logviewer/enrichment/bogon
+import http_logviewer/enrichment/geoip
+
+# 1. RFC 1918 private IPv4 detection
+assert isRfc1918Private("10.0.0.1")
+assert isRfc1918Private("172.20.1.1")
+assert isRfc1918Private("192.168.1.100")
+assert isRfc1918Private("::ffff:192.168.1.1")
+
+# 2. Loopback and link-local detection
+assert isLoopbackIp("127.0.0.1")
+assert isLoopbackIp("::1")
+assert isLoopbackIp("localhost")
+assert isLinkLocalIp("169.254.1.1")
+assert isLinkLocalIp("fe80::1")
+
+# 3. Carrier-grade NAT, multicast, and ULA
+assert isCgnatIp("100.64.0.1")
+assert isMulticastIp("224.0.0.1")
+assert isUniqueLocalIp("fd12:3456:789a::1")
+
+# 4. Subnet classification
+assert classifyIpSubnet("192.168.1.1") == SubnetPrivateRfc1918
+assert subnetDescription(SubnetPrivateRfc1918) == "RFC 1918 Private LAN"
+assert classifyIpSubnet("127.0.0.1") == SubnetLoopback
+assert classifyIpSubnet("8.8.8.8") == SubnetPublic
+
+# 5. Distinct local traffic markers
+assert formatLocalTrafficMarker("192.168.1.1", useEmoji = true) == "🏠 Local / Private LAN"
+assert formatLocalTrafficMarker("192.168.1.1", useEmoji = false) == "[LAN] Local / Private LAN"
+assert formatLocalTrafficMarker("10.0.0.1", useEmoji = true, detailed = true) == "🏠 Local / Private LAN (RFC 1918 Private LAN)"
+```
+
+#### Terminal Demonstration
+
+The recording below demonstrates RFC 1918 subnet boundary detection, loopback/link-local resolution, CGNAT/multicast classification, bogon range filtering, distinct local traffic markers, and GeoIpEngine integration:
+
+![Bogon, Private and Loopback IP Subnets](docs/images/bogon_and_private_ip.gif)
+
+> *Source session recording:* [`docs/recordings/bogon_and_private_ip.cast`](docs/recordings/bogon_and_private_ip.cast) *(recorded with Asciinema, rendered via Agg with JetBrainsMono Nerd Font Mono)*.
+
+Compile and run this example:
+```bash
+nim r --path:src examples/bogon_and_private_ip.nim
+```
+
+---
+
 ## Examples
 
 The `examples/` folder provides executable demonstrations of each pipeline layer:
@@ -548,6 +611,7 @@ The `examples/` folder provides executable demonstrations of each pipeline layer
 - [`examples/parsing_fault_tolerance.nim`](examples/parsing_fault_tolerance.nim): Robust parsing fault-tolerance, byte and quote sanitization, IPv4/IPv6 address normalization, multi-locale timestamps, and streaming diagnostics.
 - [`examples/ip_to_country_lookup.nim`](examples/ip_to_country_lookup.nim): Comprehensive IP-to-Country geolocation, offline CIDR lookups, MaxMind MMDB parsing, LRU cache benchmarks, and bogon LAN detection.
 - [`examples/flags_and_country_metadata.nim`](examples/flags_and_country_metadata.nim): Algorithmic ISO country flag emojis, 249 country name resolutions, security pseudo-codes, and terminal ASCII fallback.
+- [`examples/bogon_and_private_ip.nim`](examples/bogon_and_private_ip.nim): Comprehensive RFC 1918, loopback, link-local, CGNAT, multicast, bogon reserved networks, and local traffic markers.
 - [`examples/pipeline_scaffolding.nim`](examples/pipeline_scaffolding.nim): Cross-module pipeline event envelope demonstration.
 
 ---

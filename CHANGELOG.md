@@ -113,3 +113,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Created standalone runnable code example in `examples/flags_and_country_metadata.nim`.
 - Recorded terminal asciicast (`docs/recordings/flags_and_country_metadata.cast`) and rendered animated demo GIF (`docs/images/flags_and_country_metadata.gif`) with Asciinema and Agg using JetBrainsMono Nerd Font Mono.
 
+##### Category C: Bogon, Private, and Loopback IP Handling
+- Implemented high-precision RFC 1918 private IPv4 subnet detection (`isRfc1918Private`, `isRfc1918Ip`) with exact boundary validation for `10.0.0.0/8`, `172.16.0.0/12`, and `192.168.0.0/16`, including support for IPv4-mapped IPv6 formats (Item 01).
+- Implemented loopback and link-local range detection (`isLoopbackIp`, `isLinkLocalIp`) supporting IPv4 `127.0.0.0/8`, IPv6 `::1`, `localhost` aliases, IPv4 link-local `169.254.0.0/16`, IPv6 link-local unicast `fe80::/10`, and network interface scope stripping (`%eth0`) (Item 02).
+- Implemented carrier-grade NAT (`isCgnatIp`, `100.64.0.0/10`), IPv6 Unique Local Address (`isUniqueLocalIp`, `fc00::/7`), multicast group detection (`isMulticastIp`, `224.0.0.0/4`, `ff00::/8`), and unroutable bogon / reserved / documentation detection (`isBogonIp`, `isDocumentationIp`, `0.0.0.0/8`, `240.0.0.0/4`, `255.255.255.255`, TEST-NET-1/2/3, `2001:db8::/32`).
+- Implemented architectural subnet topology classifier (`classifyIpSubnet`) and human-readable descriptions (`subnetDescription`) mapping addresses to `IpSubnetKind` enum values.
+- Implemented distinct visual markers and badges for local/internal traffic (`formatLocalTrafficMarker`, `formatPrivateIpBadge`, `makeEnrichedPrivateLocation`) rendering `🏠 Local / Private LAN` (or ASCII `[LAN] Local / Private LAN`) and annotating subnet kinds without database lookups (Item 03).
+- Added comprehensive unit test suite in `tests/t_bogon_private_ip.nim` covering RFC 1918 subnet boundaries, loopback/link-local ranges, CGNAT, multicast, ULA, bogon/reserved subnets, and GeoIpEngine short-circuiting (Item 04).
+- Created standalone runnable code example in `examples/bogon_and_private_ip.nim`.
+- Recorded terminal asciicast (`docs/recordings/bogon_and_private_ip.cast`) and rendered high-resolution animated demo GIF (`docs/images/bogon_and_private_ip.gif`) using Asciinema and Agg with JetBrainsMono Nerd Font Mono.
+
