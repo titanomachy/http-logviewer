@@ -826,6 +826,22 @@ method lookup*(engine: GeoIpEngine, ip: string): GeoLocation =
   engine.cache.put(trimmed, loc)
   return loc
 
+proc hits*(engine: GeoIpEngine): int {.inline.} =
+  ## Returns total number of cache hits recorded by the GeoIP engine.
+  if engine.cache != nil: engine.cache.hits else: 0
+
+proc misses*(engine: GeoIpEngine): int {.inline.} =
+  ## Returns total number of cache misses recorded by the GeoIP engine.
+  if engine.cache != nil: engine.cache.misses else: 0
+
+proc hitRate*(engine: GeoIpEngine): float {.inline.} =
+  ## Returns cache hit ratio (0.0 to 1.0) of the GeoIP engine.
+  if engine.cache != nil: engine.cache.hitRate() else: 0.0
+
+proc clearCache*(engine: GeoIpEngine) {.inline.} =
+  ## Clears all cached GeoIP entries and resets hit/miss counters.
+  if engine.cache != nil: engine.cache.clear()
+
 # ==============================================================================
 # Pipeline Hello & Cross-Module Verification
 # ==============================================================================
