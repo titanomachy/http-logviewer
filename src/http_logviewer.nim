@@ -4,13 +4,13 @@
 import std/[options, tables]
 import http_logviewer/core/[prelude, types, config, errors]
 import http_logviewer/parser/[engine, formats]
-import http_logviewer/enrichment/[geoip, flags]
+import http_logviewer/enrichment/[geoip, flags, bogon]
 import http_logviewer/analyzer/[classifier, signatures, useragents, correlator]
 import http_logviewer/renderer/[terminal, styles]
 import http_logviewer/cli/args
 import http_logviewer/submodule
 
-export prelude, types, config, errors, engine, formats, geoip, flags, classifier, signatures, useragents, correlator, terminal, styles, args, submodule
+export prelude, types, config, errors, engine, formats, geoip, flags, bogon, classifier, signatures, useragents, correlator, terminal, styles, args, submodule
 
 # Thread-local control flag used strictly for POSIX signal handling during CLI streaming
 var keepRunning* {.threadvar.}: bool

@@ -22,4 +22,5 @@ import t_library_api
 import t_e2e_integration
 import t_code_quality
 import t_memory_safety
+import t_threat_accuracy
 import test1

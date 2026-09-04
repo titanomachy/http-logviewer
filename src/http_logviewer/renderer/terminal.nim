@@ -6,6 +6,7 @@ import std/[strutils, times, terminal, unicode, tables, sets, algorithm, json, o
 import ../core/types
 import ../enrichment/[geoip, flags]
 import ../analyzer/correlator
+import ../parser/formats
 import styles
 
 export styles
@@ -284,7 +285,8 @@ proc highlightUriDiff*(baseline: string, modified: string, colorize: bool = true
   result = pathStr & FgGray & "?" & Reset & formattedPairs.join(FgGray & "&" & Reset)
 
 proc formatPathForStream(path: string, maxLen: int, highlight: bool, isSuspicious: bool): string =
-  let p = if maxLen > 0: shortenPath(path, maxLen) else: path
+  let cleanPath = sanitizeControlChars(path)
+  let p = if maxLen > 0: shortenPath(cleanPath, maxLen) else: cleanPath
   if highlight and isSuspicious:
     highlightSuspiciousUri(p, colorize = true)
   else:
@@ -303,7 +305,8 @@ proc renderStreamLine*(
   let geoStr = formatCountryColumn(record.geo, useEmoji = opts.useEmoji, width = 7)
   let statusStr = formatStatusCode(record.entry.statusCode, opts.colorize)
   let intentBadge = formatIntentBadge(record.threat.category, opts.colorize)
-  let ipStr = alignLeft(if record.entry.clientIp.len > 0: record.entry.clientIp else: "-", 15)
+  let cleanIp = sanitizeControlChars(record.entry.clientIp)
+  let ipStr = alignLeft(if cleanIp.len > 0: cleanIp else: "-", 15)
 
   let prefix = "$1  $2  $3  $4  $5" % [
     timeStr, geoStr, statusStr, intentBadge, ipStr
@@ -315,22 +318,22 @@ proc renderStreamLine*(
     let formattedPath = formatPathForStream(record.entry.path, opts.maxPathLen, opts.highlightSuspicious and opts.colorize, isSuspicious)
     let reqStr = $record.entry.method & " " & formattedPath
     if opts.includeUserAgent:
-      let rawUa = if record.entry.userAgent.len > 0: record.entry.userAgent else: "-"
+      let rawUa = if record.entry.userAgent.len > 0: sanitizeControlChars(record.entry.userAgent) else: "-"
       let uaStr = if opts.maxUaLen > 0: truncateText(rawUa, opts.maxUaLen) else: rawUa
       result = prefix & "  " & reqStr & "  " & uaStr
     else:
       result = prefix & "  " & reqStr
   else:
     if opts.maxWidth <= prefixWidth:
-      let reqStr = $record.entry.method & " " & record.entry.path
+      let reqStr = $record.entry.method & " " & sanitizeControlChars(record.entry.path)
       let line = prefix & "  " & reqStr
       return truncateAnsi(line, opts.maxWidth)
 
     let remaining = opts.maxWidth - prefixWidth - 2
-    let rawPath = record.entry.path
+    let rawPath = sanitizeControlChars(record.entry.path)
     let methStr = $record.entry.method & " "
     let fullReqLen = methStr.len + rawPath.len
-    let rawUa = if record.entry.userAgent.len > 0: record.entry.userAgent else: "-"
+    let rawUa = if record.entry.userAgent.len > 0: sanitizeControlChars(record.entry.userAgent) else: "-"
 
     if not opts.includeUserAgent or remaining < 30:
       let maxP = if opts.maxPathLen > 0: min(opts.maxPathLen, max(5, remaining - methStr.len))

@@ -1299,7 +1299,8 @@ proc correlateRecord*(
   let seqHash = table.ipSequences[entry.clientIp].sequenceHash()
 
   # 4. Extract Subnet and Datacenter info, check Proxy Rotation & Synchronized Burst
-  let subnet = extractSubnetCidr(entry.clientIp)
+  let isPriv = isPrivateIp(cleanIpAddress(entry.clientIp))
+  let subnet = if isPriv: "" else: extractSubnetCidr(entry.clientIp)
   let dcInfo = identifyHostingProvider(entry.clientIp)
   let proxyRotating = table.detectProxyRotation(entry, threat, normPath, normUa)
   let (burstDetected, burstIps) = table.detectSynchronizedBurst(entry, table.burstThresholdMs)

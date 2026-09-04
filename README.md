@@ -101,6 +101,7 @@ High-performance HTTP log viewer and rogue bot detector written in Nim. `http_lo
   - [End-to-End Pipeline & Sample Log Fixtures](#21-end-to-end-pipeline--sample-log-fixtures)
   - [Idiomatic Nim & Architectural Integrity](#22-idiomatic-nim--architectural-integrity)
   - [Memory Safety & Allocation Profiling](#23-memory-safety--allocation-profiling)
+  - [Threat Detection Accuracy & False Positive Auditing](#24-threat-detection-accuracy--false-positive-auditing)
 - [Examples](#examples)
 - [Development and Documentation](#development-and-documentation)
 - [Attribution and License](#attribution-and-license)
@@ -166,6 +167,7 @@ The library exposes clean, type-safe Nim APIs organized into modular layers:
 | [End-to-End Pipeline & Fixtures](#21-end-to-end-pipeline--sample-log-fixtures) | `tests/fixtures/`, `http_logviewer` | `combined.log`, `attacks.log`, `distributed_botnet.log`, `formatStatusCode`, `renderStreamLine` | End-to-end pipeline verification across sample fixtures, zero false positive genuine traffic, OWASP attack classification, background red 404 badges, and multi-IP botnet correlation |
 | [Idiomatic Nim & Architecture](#22-idiomatic-nim--architectural-integrity) | `http_logviewer`, `http_logviewer/core/*` | `func` vs `proc`, `CatchableError`, immutable `let` bindings, acyclic DAG | Side-effect-free pure functions, parameter immutability, acyclic layered architecture, and robust typed exception handling |
 | [Memory Safety & Profiling](#23-memory-safety--allocation-profiling) | `http_logviewer/core/types`, `http_logviewer/parser/*`, `http_logviewer/analyzer/correlator` | `--mm:orc`, `cleanIpAddress`, `sanitizeField`, `pruneExpired`, `StreamReader.close` | Deterministic ARC/ORC lifecycle, zero-allocation hot-path fast paths, reliable handle cleanup with `defer`, AddressSanitizer buffer safety, and sliding-window bounded memory |
+| [Threat Accuracy & False Positives](#24-threat-detection-accuracy--false-positive-auditing) | `http_logviewer/analyzer/*`, `http_logviewer/enrichment/bogon` | `evaluateThreat`, `formatIpv6Canonical`, `normalizeIpv6Address`, `normalizeIpAddress`, `cleanIpString`, `sanitizeControlChars` | Legitimate traffic protection (real users, search engines, friendly crawlers), accidental 404 broken link mitigation, CGNAT/proxy multi-IP isolation, RFC 5952 IPv6 normalization, adversarial log injection resilience, and case-insensitive attack matching |
 | Error Hierarchy | `http_logviewer/core/errors` | `HttpLogViewerError`, `ParseError`, `ThreatAnalysisError`, `ConfigError` | Robust exception hierarchy derived from `CatchableError` |
 
 ---
@@ -1373,9 +1375,61 @@ nim r --path:src examples/memory_safety_and_profiling.nim
 
 ---
 
+### 24. Threat Detection Accuracy & False Positive Auditing
+
+Rigorous threat classification auditing, false positive elimination, IPv6 address canonicalization, and adversarial log injection defense:
+
+- **Legitimate Web Traffic Protection**: Standard human browser visitors requesting pages, navigation endpoints, REST APIs, or search queries never exceed risk score 20, remaining securely classified as `CategoryRealUser`. Browsing patterns that automatically request static assets (CSS, JS, images, fonts) earn a mitigating bonus reducing accidental risk scores to 0.
+- **Search Engine & Friendly Crawler Exemption**: Verified search engine crawlers (`Googlebot`, `bingbot`, `DuckDuckBot`, `YandexBot`, `Baiduspider`, `Applebot`) and friendly social/archivist bots (`Twitterbot`, `Slackbot`, `LinkedInBot`, `facebookexternalhit`, `ia_archiver`) are protected from false positive hacker flags, receiving `score = 0` and their canonical bot categories even during high-velocity indexing.
+- **Accidental 404 Broken Link Mitigation**: Single accidental 404 responses for broken page links add only 5 risk points, keeping the visitor firmly within `CategoryRealUser` (<= 20). 404 errors on missing static assets (`/favicon.ico`, `/images/logo.png`, `/css/theme.css`) score 0 points. In contrast, dictionary fuzzing velocity (10+ rapid consecutive 404s on administrative/exploit endpoints) escalates to `CategoryBadActorHacker`.
+- **Multi-IP Correlation & CGNAT / Proxy Protection**: Distinct innocent visitors sharing common Carrier-Grade NAT gateways (`100.64.0.0/10`, RFC 6598), corporate forward proxies, or private RFC 1918 subnets (`192.168.1.0/24`) are never merged into `ActorCluster` records. Private and CGNAT subnets are explicitly exempted from subnet-level clustering, preventing accidental grouping of unrelated internal traffic.
+- **IPv6 Parsing Edge Cases & RFC 5952 Canonical Normalization**: Full parsing support for 8-word IPv6, leading/trailing/embedded `::` shorthand, IPv4-mapped addresses (`::ffff:192.0.2.128`), bracketed notations with ports (`[2001:db8::1]:8080`), and link-local zone indices (`[fe80::1%eth0]:80`). `formatIpv6Canonical`, `normalizeIpv6Address`, and `normalizeIpAddress` enforce standard RFC 5952 formatting (lowercase hex, leading zeros suppressed, longest contiguous zero run compressed with `::`, tie-breaking on first run, single zero fields preserved).
+- **Adversarial Log Injection Defense**: Both parser (`sanitizeField`, `sanitizeControlChars`, `sanitizeUtf8`) and terminal layout renderer (`renderStreamLine`, `formatPathForStream`) neutralize hostile log payloads. Raw ANSI escape bytes (`\x1b[2J`, cursor moves, color codes) are defanged into safe literal text (`\e[2J`), CRLF injections are escaped (`\r\n`), null bytes (`\0`) are preserved without C-string truncation, and invalid UTF-8 sequences are mapped to `\uFFFD`.
+- **Case-Insensitive & Normalized Attack Signatures**: All sensitive file probes (`/.ENV`, `/WP-CONFIG.PHP`, `/ID_RSA`), CMS exploits (`/Wp-LoGiN.PhP`, `/%57%70%2d%6c%6f%67%69%6e`), SQL injection (`UnIoN+SeLeCt`, `' oR 1=1`), directory traversal (`..\..\WiNdOwS\sYsTeM32`, `%252e%252e%252f`), and Log4j vectors (`${jNdI:LdAp://...}`) are evaluated against multi-pass URL-decoded, slash-normalized, lowercase payloads.
+
+```nim
+import http_logviewer
+import http_logviewer/core/types
+import http_logviewer/enrichment/bogon
+import http_logviewer/analyzer/classifier
+
+# 1. Audit real user traffic with accidental 404
+let entry = initHttpLogEntry(
+  clientIp = "93.184.216.34",
+  path = "/blog/missing-link",
+  statusCode = 404,
+  userAgent = "Mozilla/5.0 Chrome/122.0"
+)
+let threat = analyzeEntry(entry)
+assert threat.category == CategoryRealUser # Score: 5 <= 20
+
+# 2. RFC 5952 Canonical IPv6 Normalization
+assert normalizeIpAddress("[2001:0db8:0000:0000:0000:ff00:0042:8329]:8080") == "2001:db8::ff00:42:8329"
+
+# 3. Defang Adversarial Terminal Log Injection
+assert sanitizeField("Mozilla/5.0 \x1b[2J\x1b[H\x1b[31;1mPWNED\x1b[0m") == "Mozilla/5.0 \\e[2J\\e[H\\e[31;1mPWNED\\e[0m"
+```
+
+#### Terminal Demonstration
+
+The recording below demonstrates legitimate traffic auditing, accidental 404 mitigation, CGNAT multi-IP isolation, RFC 5952 canonical IPv6 normalization, adversarial log injection defense, and case-insensitive attack signature matching:
+
+![Threat Detection Accuracy & False Positive Auditing](docs/images/threat_accuracy_and_false_positives.gif)
+
+> *Source session recording:* [`docs/recordings/threat_accuracy_and_false_positives.cast`](docs/recordings/threat_accuracy_and_false_positives.cast) *(recorded with Asciinema, rendered via Agg with JetBrainsMono Nerd Font Mono)*.
+
+Compile and run this example:
+```bash
+nim r --path:src examples/threat_accuracy_and_false_positives.nim
+```
+
+---
+
 ## Examples
 
 The `examples/` folder provides executable demonstrations of each pipeline layer:
+
+- [`examples/threat_accuracy_and_false_positives.nim`](examples/threat_accuracy_and_false_positives.nim): Legitimate traffic protection, accidental 404 mitigation, CGNAT multi-IP isolation, RFC 5952 canonical IPv6 normalization, adversarial log injection defense, and case-insensitive attack signature matching.
 
 - [`examples/memory_safety_and_profiling.nim`](examples/memory_safety_and_profiling.nim): ARC/ORC deterministic memory reclamation, hot-loop allocation profiling, reliable handle cleanup with defer, buffer safety under AddressSanitizer, and sliding-window bounded memory retention.
 - [`examples/idiomatic_nim_and_architecture.nim`](examples/idiomatic_nim_and_architecture.nim): Pure functions (func vs proc), parameter immutability, layered acyclic architecture, CatchableError hierarchy, and modern Nim 2.2 idioms.

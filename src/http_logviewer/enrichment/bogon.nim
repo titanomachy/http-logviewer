@@ -70,10 +70,14 @@ func parseIpv4ToUint32*(ip: string, ipNum: var uint32): bool =
 
 func parseIpv6ToBytes*(ip: string, bytes: var array[16, byte]): bool =
   ## Parses standard IPv6 hex representations including "::" shorthand.
-  ## Also handles bracketed notations like `"[2001:db8::1]"`.
+  ## Also handles bracketed notations like `"[2001:db8::1]"` and `"[2001:db8::1]:8080"`.
   var raw = ip.strip()
-  if raw.startsWith('[') and raw.endsWith(']'):
-    raw = raw[1..^2]
+  if raw.startsWith('['):
+    let closeBracket = raw.find(']')
+    if closeBracket > 0:
+      raw = raw[1 ..< closeBracket]
+    elif raw.endsWith(']'):
+      raw = raw[1..^2]
 
   let pctIdx = raw.find('%')
   if pctIdx >= 0:
@@ -142,6 +146,127 @@ func parseIpv6ToBytes*(ip: string, bytes: var array[16, byte]): bool =
     bytes[i * 2 + 1] = byte(fullWords[i] and 0xFF)
 
   return true
+
+func wordToHex(w: uint16): string {.inline.} =
+  if w == 0'u16: "0"
+  else: toHex(w).strip(leading = true, trailing = false, chars = {'0'}).toLowerAscii()
+
+func cleanIpString*(rawIp: string): string =
+  ## Strips port suffixes, bracket enclosures, zone indices (%eth0), and surrounding whitespace.
+  var s = rawIp.strip(chars = {' ', '\t', '"', '\''})
+  if s.len == 0:
+    return ""
+  let commaIdx = s.find(',')
+  if commaIdx > 0:
+    s = s[0 ..< commaIdx].strip(chars = {' ', '\t', '"', '\''})
+  if s.startsWith('['):
+    let closeBracket = s.find(']')
+    if closeBracket > 0:
+      s = s[1 ..< closeBracket]
+    elif s.endsWith(']'):
+      s = s[1 .. ^2]
+  let pctIdx = s.find('%')
+  if pctIdx > 0:
+    s = s[0 ..< pctIdx]
+  # IPv4 with port: single colon and dots
+  if s.count(':') == 1 and s.find('.') > 0:
+    let colonIdx = s.find(':')
+    s = s[0 ..< colonIdx]
+  return s.strip()
+
+func formatIpv6Canonical*(bytes: array[16, byte]): string =
+  ## Formats 16 IPv6 bytes into canonical RFC 5952 string representation:
+  ## - Lowercase hexadecimal characters (RFC 5952 Sec 4.1)
+  ## - Suppresses leading zeros in each 16-bit word (Sec 4.2.1)
+  ## - Compresses the longest run of consecutive 16-bit zeros with "::" (Sec 4.2.2 & 4.2.3)
+  ## - Does not compress a single 16-bit 0 with "::" (Sec 4.2.2)
+  ## - On tie for longest zero run, compresses the first run (Sec 4.2.3)
+  ## - Formats IPv4-mapped addresses (::ffff:a.b.c.d) in standard dotted decimal (Sec 4.2.4)
+  
+  # 1. Check for IPv4-mapped IPv6 (::ffff:a.b.c.d)
+  var isV4Mapped = true
+  for i in 0..9:
+    if bytes[i] != 0'u8:
+      isV4Mapped = false
+      break
+  if isV4Mapped and bytes[10] == 0xFF'u8 and bytes[11] == 0xFF'u8:
+    return "::ffff:" & $bytes[12] & "." & $bytes[13] & "." & $bytes[14] & "." & $bytes[15]
+
+  # 2. Extract 8 16-bit words
+  var words: array[8, uint16]
+  for i in 0..7:
+    words[i] = (uint16(bytes[i * 2]) shl 8) or uint16(bytes[i * 2 + 1])
+
+  # 3. Find longest run of zeros of length >= 2
+  var bestStart = -1
+  var bestLen = 0
+  var curStart = -1
+  var curLen = 0
+
+  for i in 0..7:
+    if words[i] == 0'u16:
+      if curStart < 0:
+        curStart = i
+        curLen = 1
+      else:
+        inc curLen
+    else:
+      if curStart >= 0:
+        if curLen > bestLen:
+          bestStart = curStart
+          bestLen = curLen
+        curStart = -1
+        curLen = 0
+
+  if curStart >= 0 and curLen > bestLen:
+    bestStart = curStart
+    bestLen = curLen
+
+  # Only compress if longest run is at least 2 zero fields (RFC 5952 Sec 4.2.2)
+  if bestLen < 2:
+    bestStart = -1
+    bestLen = 0
+
+  # 4. If all 8 words are 0, return "::"
+  if bestLen == 8:
+    return "::"
+
+  # 5. Build canonical string
+  var res = ""
+  var i = 0
+  while i < 8:
+    if i == bestStart:
+      res.add("::")
+      i += bestLen
+    else:
+      if res.len > 0 and not res.endsWith("::"):
+        res.add(':')
+      res.add(wordToHex(words[i]))
+      inc i
+
+  return res
+
+func normalizeIpv6Address*(ip: string): string =
+  ## Normalizes an IPv6 address string into canonical RFC 5952 format.
+  ## Strips brackets, port suffixes, zone indices (%eth0), and surrounding whitespace.
+  ## Returns cleaned string if input cannot be parsed as IPv6.
+  let cleaned = cleanIpString(ip)
+  var bytes: array[16, byte]
+  if parseIpv6ToBytes(cleaned, bytes):
+    formatIpv6Canonical(bytes)
+  else:
+    cleaned
+
+func normalizeIpAddress*(ip: string): string =
+  ## Normalizes an IPv4 or IPv6 address:
+  ## - Strips port suffixes, bracket enclosures, zone indices, quotes, and whitespace.
+  ## - Valid IPv4 addresses are returned in clean dotted-decimal format.
+  ## - Valid IPv6 addresses are canonicalized into RFC 5952 representation.
+  let cleaned = cleanIpString(ip)
+  if cleaned.find(':') >= 0:
+    normalizeIpv6Address(cleaned)
+  else:
+    cleaned
 
 # ==============================================================================
 # Subnet & Topology Predicates
