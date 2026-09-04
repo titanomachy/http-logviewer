@@ -64,5 +64,9 @@ task clean, "Clean all build artifacts":
     rmFile "build/t_classifier"
   if fileExists("build/t_correlator"):
     rmFile "build/t_correlator"
+  if fileExists("build/t_code_quality"):
+    rmFile "build/t_code_quality"
+  if fileExists("build/t_memory_safety"):
+    rmFile "build/t_memory_safety"
   if fileExists("build/test_all"):
     rmFile "build/test_all"

@@ -296,9 +296,10 @@ suite "Streaming Ingestion - Benchmark Throughput (Phase 02 / Category B / Item 
     let tps = benchmarkParsingThroughput(50_000)
     # Output measured throughput
     echo "    [Benchmark] Slicing Combined Parser Throughput: ", formatFloat(tps, ffDecimal, 0), " lines/sec"
-    # Even in non-release mode on standard hardware, should comfortably process tens of thousands,
-    # and in release mode easily exceeds 150,000 to 500,000 lines/sec.
-    check tps > 30_000.0 # generous baseline for debug/check mode, release mode exceeds 100k
+    when defined(release):
+      check tps > 100_000.0 # Exceeds 100k lines/sec in release mode
+    else:
+      check tps > 20_000.0 # Baseline for unoptimized debug/ASan instrumentation builds
 
 suite "Streaming Ingestion - Malformed Line Handling & Diagnostics (Phase 02 / Category C / Item 02)":
 

@@ -599,12 +599,16 @@ proc addEntry*(
   entry: HttpLogEntry,
   score: int = 0,
   category: ActorCategory = CategoryUnknown,
-  flags: set[ThreatFlag] = {}
+  flags: set[ThreatFlag] = {},
+  maxStoredEntries: int = 1000
 ) =
   ## Ingests an HTTP log entry into the cluster, dynamically updating unique IPs,
   ## request counts, error metrics, time windows, and aggregated threat posture.
+  ## Memory retention is bounded by retaining up to `maxStoredEntries` most recent entries.
   if entry.clientIp.len > 0:
     cluster.ips.incl(entry.clientIp)
+  if maxStoredEntries > 0 and cluster.entries.len >= maxStoredEntries:
+    cluster.entries.delete(0)
   cluster.entries.add(entry)
   inc cluster.totalRequests
   if entry.statusCode == 404:
@@ -622,6 +626,8 @@ proc addEntry*(
     cluster.category = category
   cluster.flags = cluster.flags + flags
   if entry.path.len > 0 and entry.path notin cluster.probedPaths:
+    if cluster.probedPaths.len >= 100:
+      cluster.probedPaths.delete(0)
     cluster.probedPaths.add(entry.path)
   if cluster.primaryUa.len == 0 and entry.userAgent.len > 0:
     cluster.primaryUa = entry.userAgent

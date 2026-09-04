@@ -260,5 +260,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Created standalone runnable code example in `examples/idiomatic_nim_and_architecture.nim`.
 - Recorded terminal asciicast (`docs/recordings/idiomatic_nim_and_architecture.cast`) and rendered high-resolution animated demo GIF (`docs/images/idiomatic_nim_and_architecture.gif`) with Asciinema and Agg using JetBrainsMono Nerd Font Mono.
 
-
-
+##### Category B: Memory Safety, ARC/ORC & Allocation Profiling
+- Compiled and verified the entire test suite and CLI binary under `--mm:orc` and `--mm:arc` with zero memory leaks, confirming deterministic reference lifetime reclamation and cyclic structure cleanup (Item 01).
+- Profiled heap allocations during continuous high-throughput log ingestion; implemented zero-allocation fast paths in `cleanIpAddress` and `sanitizeField` on clean IPv4 and UTF-8 inputs, and eliminated intermediate sequence allocations in hot-loop parsing to achieve > 380,000 lines/sec throughput (Item 02).
+- Audited and verified that all file handles, streams, gzip descriptors, and system resources are reliably closed using `defer: stream.close()` or `try/finally` blocks with fully idempotent multi-close safety (Item 03).
+- Compiled and executed the test suite with AddressSanitizer (`--passC:-fsanitize=address --passL:-fsanitize=address`) across oversized URIs (4KB-64KB), null-byte injections, and adversarial payloads, verifying zero heap buffer overflows or memory corruption (Item 04).
+- Audited `ActorClusterTable` data structures to ensure bounded memory growth during continuous 24/7 streaming; verified sliding-window expiration via `pruneExpired`, bounded cluster entry retention (`maxStoredEntries = 1000`), and probed path caps (100 paths) (Item 05).
+- Verified that root `nim.cfg` (`--nimcache:"build/nimcache"`, `--outdir:"build"`) and `http_logviewer.nimble` (`binDir = "build"`) route 100% of compilation outputs, intermediate C artifacts, and documentation strictly into `build/` (Item 06).
+- Implemented comprehensive memory safety test suite in `tests/t_memory_safety.nim` integrated into `tests/test_all.nim` covering ARC/ORC lifecycle, hot-loop allocation efficiency, defer resource cleanup, AddressSanitizer resilience, and sliding-window bounded retention.
+- Created standalone runnable code example in `examples/memory_safety_and_profiling.nim`.
+- Recorded terminal asciicast (`docs/recordings/memory_safety_and_profiling.cast`) and rendered high-resolution animated demo GIF (`docs/images/memory_safety_and_profiling.gif`) with Asciinema and Agg using JetBrainsMono Nerd Font Mono.

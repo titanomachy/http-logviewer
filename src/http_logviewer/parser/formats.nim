@@ -155,6 +155,8 @@ func cleanIpAddress*(rawIp: string): string =
   ##   ``"2001:db8::1"``        -> ``"2001:db8::1"``
   ##   ``"[fe80::1%eth0]:80"``  -> ``"fe80::1"``
   ##   ``"192.168.1.1, 10.0.0.1"`` -> ``"192.168.1.1"``
+  if isIpv4Address(rawIp):
+    return rawIp
   var s = rawIp.strip(chars = {' ', '\t', '"', '\''})
   if s.len == 0:
     return ""

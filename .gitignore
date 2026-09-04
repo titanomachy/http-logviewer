@@ -24,3 +24,6 @@ Thumbs.db
 # Editor swap files
 .*.swp
 .*.kate-swp
+
+# Local runner script/symlink
+run_plan

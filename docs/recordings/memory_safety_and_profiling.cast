@@ -1,0 +1,12 @@
+{"version":3,"term":{"cols":120,"rows":35},"timestamp":1788563748,"command":"/tmp/mem_demo","title":"Memory Safety & Allocation Profiling","env":{"SHELL":"/usr/bin/zsh"}}
+[0.003, "o", "=== http_logviewer: Memory Safety, ARC/ORC & Allocation Profiling (Phase 08 / Category B) ===\r\n\r\n[1] ARC/ORC Deterministic Memory Reclamation:\r\n  Under --mm:orc, objects and references are freed immediately upon leaving scope.\r\n"]
+[0.004, "o", "  Instantiated and correlated 100 entries into 1 active clusters.\r\n  Explicit table release completed. Clusters: 0, IPs: 0\r\n\r\n[2] Allocation Profiling & Hot-Loop Efficiency:\r\n  cleanIpAddress and sanitizeField use zero-allocation fast paths on clean inputs.\r\n  cleanIpAddress fast path: 192.168.1.55 (zero heap allocation on valid IPv4)\r\n"]
+[0.000, "o", "  sanitizeField fast path:  /api/v1/status (zero heap allocation on clean UTF-8)\r\n"]
+[0.026, "o", "  In-memory parse throughput: 382292. lines/sec (zero intermediate seq allocs)\r\n\r\n[3] Resource Cleanup & Safe Handle Management:\r\n  All file handles, gzip archives, and custom streams are reliably closed via defer:\r\n"]
+[0.000, "o", "  StreamReader read 118 bytes; closed flag before defer: false\r\n  Resource cleanly closed and temporary fixture removed.\r\n\r\n"]
+[0.000, "o", "[4] Buffer Safety & AddressSanitizer Compliance:\r\n  Oversized or adversarial inputs are safely handled without heap buffer overflows:\r\n"]
+[0.000, "o", "  Parsed 4KB URI line without crash: true (path length: 4097 bytes)\r\n\r\n[5] Sliding-Window Expiration & Bounded Memory Retention:\r\n  ActorClusterTable automatically expires clusters older than the sliding window.\r\n"]
+[0.001, "o", "  Initial cluster count: 1\r\n"]
+[0.000, "o", "  Pruned expired clusters at t + 10m: 1 cluster(s) pruned. Active: 0\r\n\r\n[6] Build Output Isolation:\r\n  Nim compiler cache is directed to build/nimcache and all binaries reside in build/.\r\n"]
+[0.000, "o", "  nim.cfg and http_logviewer.nimble isolate 100% of compilation outputs.\r\n\r\n=== Memory safety and allocation profiling verification completed successfully. ===\r\n"]
+[0.000, "x", "0"]
