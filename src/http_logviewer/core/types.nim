@@ -108,6 +108,12 @@ type
     probedPaths*: seq[string]       ## Chronological sample of paths accessed
     proxyRotationDetected*: bool    ## Detected rapid rotation of distinct IPs (< threshold)
     proxyRotationCount*: int        ## Number of distinct IP rotations observed in rapid succession
+    subnets*: HashSet[string]       ## Distinct /24 (IPv4) or /64 (IPv6) subnets observed
+    hostingProviders*: HashSet[string] ## Known hosting providers / datacenters observed (e.g. Hetzner, AWS)
+    hasDatacenterIps*: bool         ## Whether any client IP resides in a known hosting provider range
+    synchronizedBurstDetected*: bool ## Whether synchronized burst requests (< 1000ms) across distinct IPs were detected
+    synchronizedBurstCount*: int    ## Number of synchronized burst events observed
+    clusterTag*: string             ## Human-readable tag (e.g. "[Actor #12: 18 IPs - WP-Scan Botnet]")
 
   ## Enriched event passed to the presentation layer
   EnrichedLogRecord* = object
@@ -555,7 +561,13 @@ proc newActorCluster*(
   flags: set[ThreatFlag] = {},
   probedPaths: seq[string] = @[],
   proxyRotationDetected: bool = false,
-  proxyRotationCount: int = 0
+  proxyRotationCount: int = 0,
+  subnets: HashSet[string] = initHashSet[string](),
+  hostingProviders: HashSet[string] = initHashSet[string](),
+  hasDatacenterIps: bool = false,
+  synchronizedBurstDetected: bool = false,
+  synchronizedBurstCount: int = 0,
+  clusterTag: string = ""
 ): ActorCluster =
   ## Allocates and returns a new ActorCluster reference object.
   ActorCluster(
@@ -573,7 +585,13 @@ proc newActorCluster*(
     flags: flags,
     probedPaths: probedPaths,
     proxyRotationDetected: proxyRotationDetected,
-    proxyRotationCount: proxyRotationCount
+    proxyRotationCount: proxyRotationCount,
+    subnets: subnets,
+    hostingProviders: hostingProviders,
+    hasDatacenterIps: hasDatacenterIps,
+    synchronizedBurstDetected: synchronizedBurstDetected,
+    synchronizedBurstCount: synchronizedBurstCount,
+    clusterTag: clusterTag
   )
 
 proc addEntry*(
@@ -614,9 +632,11 @@ proc `$`*(cluster: ActorCluster): string =
   let firstStr = if not cluster.firstSeen.isInitialized: "-" else: cluster.firstSeen.format("yyyy-MM-dd'T'HH:mm:sszzz")
   let lastStr = if not cluster.lastSeen.isInitialized: "-" else: cluster.lastSeen.format("yyyy-MM-dd'T'HH:mm:sszzz")
   let proxyStr = if cluster.proxyRotationDetected: ", ProxyRotation: true" else: ""
-  "ActorCluster(" & cluster.clusterId & ", IPs: " & $ipCount & ", Req: " & $cluster.totalRequests &
+  let burstStr = if cluster.synchronizedBurstDetected: ", Burst: true" else: ""
+  let tagStr = if cluster.clusterTag.len > 0: " " & cluster.clusterTag else: ""
+  "ActorCluster(" & cluster.clusterId & tagStr & ", IPs: " & $ipCount & ", Req: " & $cluster.totalRequests &
     ", 404s: " & $cluster.status404Count & ", Category: " & $cluster.category &
-    ", Risk: " & $cluster.aggregateRisk & proxyStr & ", Window: [" & firstStr & " .. " & lastStr & "])"
+    ", Risk: " & $cluster.aggregateRisk & proxyStr & burstStr & ", Window: [" & firstStr & " .. " & lastStr & "])"
 
 proc `%`*(cluster: ActorCluster): JsonNode =
   ## Serializes ActorCluster to a JSON object node.
@@ -626,12 +646,22 @@ proc `%`*(cluster: ActorCluster): JsonNode =
   var pathsArr = newJArray()
   for p in cluster.probedPaths:
     pathsArr.add(%p)
+  var subnetsArr = newJArray()
+  for s in cluster.subnets:
+    subnetsArr.add(%s)
+  var provArr = newJArray()
+  for p in cluster.hostingProviders:
+    provArr.add(%p)
   let firstStr = if not cluster.firstSeen.isInitialized: "" else: cluster.firstSeen.format("yyyy-MM-dd'T'HH:mm:sszzz")
   let lastStr = if not cluster.lastSeen.isInitialized: "" else: cluster.lastSeen.format("yyyy-MM-dd'T'HH:mm:sszzz")
   %*{
     "clusterId": cluster.clusterId,
+    "clusterTag": cluster.clusterTag,
     "primaryUa": cluster.primaryUa,
     "ips": ipArr,
+    "subnets": subnetsArr,
+    "hostingProviders": provArr,
+    "hasDatacenterIps": cluster.hasDatacenterIps,
     "totalRequests": cluster.totalRequests,
     "status404Count": cluster.status404Count,
     "firstSeen": firstStr,
@@ -642,7 +672,9 @@ proc `%`*(cluster: ActorCluster): JsonNode =
     "flags": %cluster.flags,
     "probedPaths": pathsArr,
     "proxyRotationDetected": cluster.proxyRotationDetected,
-    "proxyRotationCount": cluster.proxyRotationCount
+    "proxyRotationCount": cluster.proxyRotationCount,
+    "synchronizedBurstDetected": cluster.synchronizedBurstDetected,
+    "synchronizedBurstCount": cluster.synchronizedBurstCount
   }
 
 # ==============================================================================

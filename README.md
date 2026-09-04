@@ -92,6 +92,7 @@ High-performance HTTP log viewer and rogue bot detector written in Nim. `http_lo
   - [Behavioral Heuristics & Anomaly Scoring](#12-behavioral-heuristics--anomaly-scoring)
   - [Actor Fingerprint Synthesis & Multi-IP Correlation](#13-actor-fingerprint-synthesis--multi-ip-correlation)
   - [Multi-IP Probe Sequence Correlation](#14-multi-ip-probe-sequence-correlation)
+  - [Subnet, ASN & Temporal Clustering](#15-subnet-asn--temporal-clustering)
 - [Examples](#examples)
 - [Development and Documentation](#development-and-documentation)
 - [Attribution and License](#attribution-and-license)
@@ -148,6 +149,7 @@ The library exposes clean, type-safe Nim APIs organized into modular layers:
 | [Behavioral Heuristics & Anomaly Scoring](#12-behavioral-heuristics--anomaly-scoring) | `http_logviewer/analyzer/classifier` | `VisitorBehaviorTracker`, `VisitorStats`, `evaluateThreat`, `staticAssetRatio`, `calculate404Velocity`, `evaluateMethodAnomaly`, `scoreToActorCategory` | Heuristic scoring engine (0-100), static asset ratios, 404 velocity, HTTP method anomaly scoring, and intent categorization |
 | [Actor Fingerprint Synthesis](#13-actor-fingerprint-synthesis--multi-ip-correlation) | `http_logviewer/analyzer/correlator` | `ActorFingerprint`, `generateProbeFingerprint`, `generateActorFingerprint`, `normalizePathPattern`, `hashPathSequence`, `normalizeQueryParams`, `jaccardSimilarity`, `extractSessionTokens` | Deterministic behavioral fingerprints, structural path pattern sequences, cache-buster parameter normalization, and Jaccard similarity sets |
 | [Multi-IP Probe Correlation](#14-multi-ip-probe-sequence-correlation) | `http_logviewer/analyzer/correlator` | `ActorClusterTable`, `SlidingWindowTracker`, `RecentProbe`, `ClusterRiskMetrics`, `newActorClusterTable`, `correlateRecord`, `calculateClusterMetrics`, `detectProxyRotation`, `pruneExpired` | In-memory sliding time window tracker (5-60 min), probe sequence correlation, residential proxy rotation detection, dynamic ActorClusterTable registry, and cluster-level risk metrics |
+| [Subnet, ASN & Temporal Clustering](#15-subnet-asn--temporal-clustering) | `http_logviewer/analyzer/correlator` | `ipv4ToSubnet`, `ipv6ToSubnet`, `extractSubnetCidr`, `ipInSubnet`, `identifyHostingProvider`, `detectSynchronizedBurst`, `formatClusterTag` | CIDR math & subnet grouping (/24 IPv4 and /64 IPv6), hosting provider/datacenter detection (DigitalOcean, OVH, Hetzner, AWS, Choopa), millisecond synchronized bursts, and human-readable cluster tags |
 | Error Hierarchy | `http_logviewer/core/errors` | `HttpLogViewerError`, `ParseError`, `ThreatAnalysisError`, `ConfigError` | Robust exception hierarchy derived from `CatchableError` |
 
 ---
@@ -897,6 +899,47 @@ nim r --path:src examples/multi_ip_probe_correlation.nim
 
 ---
 
+### 15. Subnet, ASN & Temporal Clustering
+
+Unifies distributed scanning nodes operating across shared network infrastructure, known hosting providers, and synchronized execution windows:
+
+- **Subnet CIDR Grouping (`ipv4ToSubnet`, `ipv6ToSubnet`, `extractSubnetCidr`)**: Automatically groups IP addresses residing within the same `/24` IPv4 subnet (256 addresses) or `/64` IPv6 subnet exhibiting coordinated suspicious activity.
+- **Hosting Provider & Datacenter Identification (`identifyHostingProvider`)**: Detects IP ranges belonging to known commercial cloud / datacenter providers commonly abused by scanners and botnets (DigitalOcean, OVH, Hetzner, AWS, Choopa/Vultr, Linode, GCP, Azure), applying risk score penalties.
+- **Synchronized Burst Request Detection (`detectSynchronizedBurst`)**: Correlates multi-node botnet fleets that fire probe requests across distinct IP addresses within a tight millisecond time window (<= 1000ms threshold).
+- **Human-Readable Cluster Tags (`formatClusterTag`)**: Automatically generates descriptive, standardized actor labels (e.g. `[Actor #12: 18 IPs - WP-Scan Botnet]`, `[Actor #1: 5 IPs (DigitalOcean /24) - DotEnv Probe]`, `[Actor #3: 12 IPs (Hetzner /24) - SQLi Exploit Cluster]`).
+- **Subnet CIDR Math & Containment (`ipInSubnet`, `parseCidr`)**: Efficient bitwise subnet matching and network boundary calculation for both IPv4 and IPv6 protocols.
+
+```nim
+import http_logviewer/core/types
+import http_logviewer/analyzer/[correlator, classifier]
+
+# 1. Subnet extraction and CIDR containment
+let subnet = extractSubnetCidr("192.168.1.45") # "192.168.1.0/24"
+assert ipInSubnet("192.168.1.99", subnet)
+
+# 2. Datacenter identification
+let dcInfo = identifyHostingProvider("159.65.120.45")
+assert dcInfo.isDatacenter
+assert dcInfo.providerName == "DigitalOcean"
+
+# 3. Synchronized burst request correlation
+let table = newActorClusterTable(windowSeconds = 1800, burstThresholdMs = 500)
+# Probes arriving from distinct IPs within milliseconds are unified into a single cluster
+```
+
+The recording below demonstrates subnet CIDR extraction, datacenter provider identification, synchronized burst detection across distinct IPs, human-readable cluster tagging, and composite risk assessment:
+
+![Subnet, ASN & Temporal Clustering](docs/images/subnet_asn_temporal_clustering.gif)
+
+> *Source session recording:* [`docs/recordings/subnet_asn_temporal_clustering.cast`](docs/recordings/subnet_asn_temporal_clustering.cast) *(recorded with Asciinema, rendered via Agg with JetBrainsMono Nerd Font Mono)*.
+
+Compile and run this example:
+```bash
+nim r --path:src examples/subnet_asn_temporal_clustering.nim
+```
+
+---
+
 ## Examples
 
 The `examples/` folder provides executable demonstrations of each pipeline layer:
@@ -916,6 +959,7 @@ The `examples/` folder provides executable demonstrations of each pipeline layer
 - [`examples/behavioral_heuristics.nim`](examples/behavioral_heuristics.nim): Behavioral heuristics, static asset ratios, 404 velocity, method anomaly scoring, and composite risk classification.
 - [`examples/actor_fingerprint_synthesis.nim`](examples/actor_fingerprint_synthesis.nim): Actor fingerprint synthesis, User-Agent normalization, path sequence hashing, cache-buster stripping, Jaccard similarity, and multi-IP botnet correlation.
 - [`examples/multi_ip_probe_correlation.nim`](examples/multi_ip_probe_correlation.nim): Multi-IP probe sequence correlation, sliding time window tracking, residential proxy rotation detection, dynamic `ActorClusterTable` linking, and cluster risk metrics.
+- [`examples/subnet_asn_temporal_clustering.nim`](examples/subnet_asn_temporal_clustering.nim): Subnet CIDR math & grouping (/24 IPv4 and /64 IPv6), hosting provider/datacenter IP identification, synchronized burst request detection, and human-readable cluster tags.
 - [`examples/pipeline_scaffolding.nim`](examples/pipeline_scaffolding.nim): Cross-module pipeline event envelope demonstration.
 
 ---

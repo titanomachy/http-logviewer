@@ -656,6 +656,299 @@ suite "5-Node Distributed Botnet Integration Test (Phase 05 / Category B / Item 
     check metrics.uniqueIps == 5
     check metrics.severity == "Critical"
 
+suite "Subnet CIDR Math & Subnet Grouping (Phase 05 / Category C / Item 01)":
+  test "Item 01: ipv4ToSubnet formats /24 and arbitrary prefixes accurately":
+    check ipv4ToSubnet("192.168.1.100") == "192.168.1.0/24"
+    check ipv4ToSubnet("10.20.30.40:8080") == "10.20.30.0/24"
+    check ipv4ToSubnet("172.16.5.9", 16) == "172.16.0.0/16"
+    check ipv4ToSubnet("10.0.0.1", 8) == "10.0.0.0/8"
+    check ipv4ToSubnet("invalid-ip") == ""
+
+  test "Item 01: ipv6ToSubnet formats /64 and arbitrary prefixes":
+    check ipv6ToSubnet("2001:0db8:85a3:0000:0000:8a2e:0370:7334") == "2001:db8:85a3:0::/64"
+    check ipv6ToSubnet("[2001:db8:abcd::1]:443") == "2001:db8:abcd:0::/64"
+    check ipv6ToSubnet("invalid-ipv6") == ""
+
+  test "Item 01: extractSubnetCidr handles both IPv4 and IPv6 automatically":
+    check extractSubnetCidr("198.51.100.25") == "198.51.100.0/24"
+    check extractSubnetCidr("2001:db8:abcd:ef01::2") == "2001:db8:abcd:ef01::/64"
+    check extractSubnetCidr("") == ""
+
+  test "Item 01: ipInSubnet evaluates network containment":
+    check ipInSubnet("192.168.1.50", "192.168.1.0/24")
+    check not ipInSubnet("192.168.2.50", "192.168.1.0/24")
+    check ipInSubnet("10.0.5.99", "10.0.0.0/8")
+    check ipInSubnet("2001:db8:85a3::1", "2001:db8:85a3::/64")
+    check not ipInSubnet("2001:db8:9999::1", "2001:db8:85a3::/64")
+
+  test "Item 01: Distinct IPs within same /24 subnet correlate into single cluster":
+    let table = newActorClusterTable(windowSeconds = 1800)
+    let t0 = parse("2026-09-04T05:00:00+02:00", "yyyy-MM-dd'T'HH:mm:sszzz")
+    let t1 = parse("2026-09-04T05:02:00+02:00", "yyyy-MM-dd'T'HH:mm:sszzz")
+
+    let entry1 = initHttpLogEntry(
+      clientIp = "198.51.100.10",
+      timestamp = t0,
+      path = "/.env",
+      `method` = HttpGet,
+      statusCode = 404,
+      userAgent = "Subnet-Scanner/1.0"
+    )
+    let entry2 = initHttpLogEntry(
+      clientIp = "198.51.100.88",
+      timestamp = t1,
+      path = "/wp-config.php",
+      `method` = HttpGet,
+      statusCode = 404,
+      userAgent = "Subnet-Scanner/1.0"
+    )
+
+    let threat1 = evaluateThreat(entry1)
+    let threat2 = evaluateThreat(entry2)
+    let cid1 = table.correlateRecord(entry1, threat1)
+    let cid2 = table.correlateRecord(entry2, threat2)
+
+    check cid1.isSome
+    check cid2.isSome
+    check cid1.get() == cid2.get()
+
+    let cluster = table.getCluster(cid1.get()).get()
+    check cluster.ips.len == 2
+    check cluster.subnets.contains("198.51.100.0/24")
+
+suite "Datacenter & Hosting Provider Identification (Phase 05 / Category C / Item 02)":
+  test "Item 02: Identify major hosting providers (DigitalOcean, OVH, Hetzner, AWS, Choopa)":
+    # DigitalOcean
+    let doInfo = identifyHostingProvider("159.65.10.20")
+    check doInfo.provider == ProviderDigitalOcean
+    check doInfo.providerName == "DigitalOcean"
+    check doInfo.asn == "AS14061"
+    check doInfo.isDatacenter
+    check isKnownDatacenter("167.99.1.5")
+    check isKnownDatacenter("138.68.50.2")
+
+    # OVH
+    let ovhInfo = identifyHostingProvider("198.27.70.1")
+    check ovhInfo.provider == ProviderOVH
+    check ovhInfo.providerName == "OVH"
+    check ovhInfo.asn == "AS16276"
+    check ovhInfo.isDatacenter
+    check isKnownDatacenter("51.254.10.5")
+
+    # Hetzner
+    let hetznerInfo = identifyHostingProvider("78.46.100.1")
+    check hetznerInfo.provider == ProviderHetzner
+    check hetznerInfo.providerName == "Hetzner"
+    check hetznerInfo.asn == "AS24940"
+    check hetznerInfo.isDatacenter
+    check isKnownDatacenter("136.243.5.10")
+    check isKnownDatacenter("65.108.1.1")
+
+    # AWS
+    let awsInfo = identifyHostingProvider("3.5.10.20")
+    check awsInfo.provider == ProviderAWS
+    check awsInfo.providerName == "AWS"
+    check awsInfo.asn == "AS16509"
+    check awsInfo.isDatacenter
+    check isKnownDatacenter("52.1.2.3")
+
+    # Choopa / Vultr
+    let choopaInfo = identifyHostingProvider("45.32.1.2")
+    check choopaInfo.provider == ProviderChoopa
+    check choopaInfo.providerName == "Choopa/Vultr"
+    check choopaInfo.asn == "AS20473"
+    check choopaInfo.isDatacenter
+    check isKnownDatacenter("108.61.5.10")
+
+  test "Item 02: Residential, private LAN, and unmapped IPs are not flagged as datacenters":
+    check not isKnownDatacenter("192.168.1.1")
+    check not isKnownDatacenter("10.0.0.1")
+    check not isKnownDatacenter("127.0.0.1")
+    check not isKnownDatacenter("::1")
+    check not isKnownDatacenter("")
+
+  test "Item 02: Cluster accumulates hosting provider telemetry and datacenter risk penalty":
+    let table = newActorClusterTable(windowSeconds = 1800)
+    let entry = initHttpLogEntry(
+      clientIp = "136.243.5.10", # Hetzner
+      timestamp = parse("2026-09-04T06:00:00+02:00", "yyyy-MM-dd'T'HH:mm:sszzz"),
+      path = "/wp-login.php",
+      `method` = HttpPost,
+      statusCode = 404,
+      userAgent = "Hetzner-Scanner/1.0"
+    )
+    let threat = evaluateThreat(entry)
+    let cid = table.correlateRecord(entry, threat)
+    check cid.isSome
+    let cluster = table.getCluster(cid.get()).get()
+    check cluster.hasDatacenterIps
+    check cluster.hostingProviders.contains("Hetzner")
+
+    let metrics = calculateClusterMetrics(cluster)
+    check metrics.hasDatacenterIps
+    check metrics.hostingProviders.contains("Hetzner")
+    check metrics.aggregateRisk == min(100, threat.score + 10) # Datacenter penalty applied
+
+suite "Synchronized Burst Request Detection (Phase 05 / Category C / Item 03)":
+  test "Item 03: Distinct IPs within milliseconds trigger synchronized burst detection":
+    let table = newActorClusterTable(windowSeconds = 1800, burstThresholdMs = 1000)
+    let t0 = parse("2026-09-04T07:00:00+02:00", "yyyy-MM-dd'T'HH:mm:sszzz")
+    # 200 ms later:
+    var t1 = t0
+    t1.nanosecond = 200_000_000
+
+    let entry1 = initHttpLogEntry(
+      clientIp = "192.0.2.1",
+      timestamp = t0,
+      path = "/.env",
+      `method` = HttpGet,
+      statusCode = 404,
+      userAgent = "BurstBot/1.0"
+    )
+    let entry2 = initHttpLogEntry(
+      clientIp = "192.0.2.2",
+      timestamp = t1,
+      path = "/.env",
+      `method` = HttpGet,
+      statusCode = 404,
+      userAgent = "BurstBot/1.0"
+    )
+
+    let threat1 = evaluateThreat(entry1)
+    let threat2 = evaluateThreat(entry2)
+    let cid1 = table.correlateRecord(entry1, threat1)
+    let cid2 = table.correlateRecord(entry2, threat2)
+
+    check cid1.isSome
+    check cid2.isSome
+    check cid1.get() == cid2.get()
+
+    let cluster = table.getCluster(cid1.get()).get()
+    check cluster.synchronizedBurstDetected
+    check cluster.synchronizedBurstCount >= 1
+    check isSynchronizedBurst(cluster)
+
+  test "Item 03: Probes spaced far apart do not flag synchronized burst":
+    let table = newActorClusterTable(windowSeconds = 1800, burstThresholdMs = 500)
+    let t0 = parse("2026-09-04T07:00:00+02:00", "yyyy-MM-dd'T'HH:mm:sszzz")
+    let t1 = parse("2026-09-04T07:00:30+02:00", "yyyy-MM-dd'T'HH:mm:sszzz") # 30s apart
+
+    let entry1 = initHttpLogEntry(
+      clientIp = "192.0.2.10",
+      timestamp = t0,
+      path = "/probe",
+      `method` = HttpGet,
+      statusCode = 404
+    )
+    let entry2 = initHttpLogEntry(
+      clientIp = "192.0.2.20",
+      timestamp = t1,
+      path = "/probe",
+      `method` = HttpGet,
+      statusCode = 404
+    )
+    let (isBurst, _) = table.detectSynchronizedBurst(entry2, 500)
+    check not isBurst
+
+suite "Human-Readable Cluster Tags (Phase 05 / Category C / Item 04)":
+  test "Item 04: formatClusterTag produces standardized tags across threat types":
+    var ipSet = initHashSet[string]()
+    ipSet.incl("1.1.1.1")
+    ipSet.incl("2.2.2.2")
+
+    var provSet = initHashSet[string]()
+    provSet.incl("DigitalOcean")
+
+    var subSet = initHashSet[string]()
+    subSet.incl("159.65.0.0/16")
+
+    let clusterWp = newActorCluster(
+      clusterId = "ACTOR-WP12",
+      ips = ipSet,
+      flags = {ThreatCmsExploit},
+      hostingProviders = provSet,
+      subnets = subSet
+    )
+    check formatClusterTag(clusterWp, 12) == "[Actor #12: 2 IPs (DigitalOcean /16) - WP-Scan Botnet]"
+
+    let clusterEnv = newActorCluster(
+      clusterId = "ACTOR-ENV1",
+      ips = initHashSet[string](),
+      flags = {ThreatSensitiveFile}
+    )
+    check formatClusterTag(clusterEnv, 1) == "[Actor #1: 1 IP - DotEnv/Config Scanner]"
+
+    let clusterSqli = newActorCluster(
+      clusterId = "ACTOR-SQL3",
+      ips = ipSet,
+      flags = {ThreatSqlInjection}
+    )
+    check formatClusterTag(clusterSqli, 3) == "[Actor #3: 2 IPs - SQLi Exploit Cluster]"
+
+    let clusterBurst = newActorCluster(
+      clusterId = "ACTOR-BST4",
+      ips = ipSet,
+      synchronizedBurstDetected = true
+    )
+    check formatClusterTag(clusterBurst, 4) == "[Actor #4: 2 IPs - Synchronized Burst Fleet]"
+
+  test "Item 04: ClusterTag is preserved in ClusterRiskMetrics and JSON":
+    var ipSet = initHashSet[string]()
+    ipSet.incl("1.2.3.4")
+    let cluster = newActorCluster(
+      clusterId = "ACTOR-TAG1",
+      ips = ipSet,
+      clusterTag = "[Actor #9: 1 IP - DotEnv Probe]"
+    )
+    let metrics = calculateClusterMetrics(cluster)
+    check metrics.clusterTag == "[Actor #9: 1 IP - DotEnv Probe]"
+    check (%metrics)["clusterTag"].getStr() == "[Actor #9: 1 IP - DotEnv Probe]"
+    check ($metrics).contains("[Actor #9: 1 IP - DotEnv Probe]")
+
+suite "Subnet Math & Cluster Association Logic (Phase 05 / Category C / Item 05)":
+  test "Item 05: parseCidr and CIDR boundary math":
+    let (ip, prefix) = parseCidr("10.0.0.0/8")
+    check ip == "10.0.0.0"
+    check prefix == 8
+
+    let (ip6, p6) = parseCidr("2001:db8::/32")
+    check ip6 == "2001:db8::"
+    check p6 == 32
+
+    let (badIp, badP) = parseCidr("invalid")
+    check badIp == "invalid"
+    check badP == -1
+
+  test "Item 05: Multi-subnet attack elevates cluster risk score":
+    let cluster = newActorCluster(
+      clusterId = "ACTOR-MULTI1",
+      highestThreatScore = 50
+    )
+    cluster.ips.incl("1.1.1.1")
+    cluster.ips.incl("2.2.2.2")
+    cluster.subnets.incl("1.1.1.0/24")
+    cluster.subnets.incl("2.2.2.0/24")
+
+    let metrics = calculateClusterMetrics(cluster)
+    # base 50 + multi-IP 10 + multi-subnet 5 = 65
+    check metrics.aggregateRisk >= 65
+    check metrics.subnets.len == 2
+
+  test "Item 05: deleteCluster unmaps subnet indexes":
+    let table = newActorClusterTable(windowSeconds = 1800)
+    let entry = initHttpLogEntry(
+      clientIp = "198.51.100.5",
+      path = "/.env",
+      `method` = HttpGet,
+      statusCode = 404
+    )
+    let cid = table.correlateRecord(entry, evaluateThreat(entry)).get()
+    check table.subnetToCluster.hasKey("198.51.100.0/24")
+
+    table.deleteCluster(cid)
+    check not table.subnetToCluster.hasKey("198.51.100.0/24")
+    check table.len == 0
+
 
 
 

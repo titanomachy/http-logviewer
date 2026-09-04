@@ -4,6 +4,8 @@
 
 import std/[strutils, hashes, sets, tables, times, options, json, algorithm]
 import ../core/types
+import ../enrichment/bogon
+import ../parser/formats
 
 type
   ## Structured behavioral fingerprint representing an actor's client identity and probe behavior
@@ -538,6 +540,279 @@ proc `%`*(fp: ActorFingerprint): JsonNode =
   }
 
 # ==============================================================================
+# Subnet CIDR Math & Extraction (Phase 05 / Category C / Item 01)
+# ==============================================================================
+
+func parseCidr*(cidrStr: string): tuple[ip: string, prefix: int] =
+  ## Parses a CIDR string (e.g. "192.168.1.0/24" or "2001:db8::/64") into IP part and prefix integer.
+  let slashIdx = cidrStr.find('/')
+  if slashIdx < 0:
+    return (cidrStr.strip(), -1)
+  let ipPart = cidrStr[0 ..< slashIdx].strip()
+  var prefix = -1
+  try:
+    prefix = parseInt(cidrStr[(slashIdx + 1) .. ^1].strip())
+  except CatchableError:
+    prefix = -1
+  (ipPart, prefix)
+
+func ipv4ToSubnet*(ip: string, prefixLen: int = 24): string =
+  ## Converts an IPv4 address to its subnet CIDR string at the specified prefix length (default /24).
+  let cleaned = cleanIpAddress(ip)
+  var ipNum: uint32
+  if not parseIpv4ToUint32(cleaned, ipNum):
+    return ""
+  let p = max(0, min(32, prefixLen))
+  let mask = if p == 0: 0'u32
+             elif p >= 32: 0xFFFFFFFF'u32
+             else: not ((1'u32 shl uint32(32 - p)) - 1'u32)
+  let net = ipNum and mask
+  let o1 = (net shr 24) and 0xFF'u32
+  let o2 = (net shr 16) and 0xFF'u32
+  let o3 = (net shr 8) and 0xFF'u32
+  let o4 = net and 0xFF'u32
+  $o1 & "." & $o2 & "." & $o3 & "." & $o4 & "/" & $p
+
+func ipv6ToSubnet*(ip: string, prefixLen: int = 64): string =
+  ## Converts an IPv6 address to its canonical subnet CIDR string at the specified prefix length (default /64).
+  let cleaned = cleanIpAddress(ip)
+  var bytes: array[16, byte]
+  if not parseIpv6ToBytes(cleaned, bytes):
+    return ""
+  let p = max(0, min(128, prefixLen))
+  var masked = bytes
+  let fullBytes = p div 8
+  let remBits = p mod 8
+  if remBits > 0 and fullBytes < 16:
+    let maskByte = byte(not ((1 shl (8 - remBits)) - 1))
+    masked[fullBytes] = masked[fullBytes] and maskByte
+  for i in (if remBits > 0: fullBytes + 1 else: fullBytes) ..< 16:
+    masked[i] = 0'u8
+
+  var words: array[8, uint16]
+  for i in 0..7:
+    words[i] = (uint16(masked[i * 2]) shl 8) or uint16(masked[i * 2 + 1])
+
+  if p == 64:
+    var parts: seq[string] = @[]
+    for i in 0..3:
+      var w = toHex(words[i]).strip(leading = true, chars = {'0'}).toLowerAscii()
+      if w.len == 0: w = "0"
+      parts.add(w)
+    result = parts.join(":") & "::/64"
+  else:
+    var parts: seq[string] = @[]
+    for i in 0..7:
+      var w = toHex(words[i]).strip(leading = true, chars = {'0'}).toLowerAscii()
+      if w.len == 0: w = "0"
+      parts.add(w)
+    result = parts.join(":") & "/" & $p
+
+func extractSubnetCidr*(ip: string): string =
+  ## Extracts the network subnet CIDR for an IP address:
+  ## Returns /24 for IPv4 (e.g. "192.168.1.0/24") and /64 for IPv6 (e.g. "2001:db8:85a3:0::/64").
+  let cleaned = cleanIpAddress(ip)
+  if cleaned.len == 0:
+    return ""
+  if cleaned.find(':') >= 0:
+    ipv6ToSubnet(cleaned, 64)
+  else:
+    ipv4ToSubnet(cleaned, 24)
+
+func ipInSubnet*(ip: string, cidr: string): bool =
+  ## Tests if the given IP address is contained within the specified CIDR block.
+  let (netStr, prefix) = parseCidr(cidr)
+  if prefix < 0 or netStr.len == 0:
+    return false
+  let cleaned = cleanIpAddress(ip)
+
+  if cleaned.find(':') >= 0 and netStr.find(':') >= 0:
+    var ipBytes, netBytes: array[16, byte]
+    if not parseIpv6ToBytes(cleaned, ipBytes) or not parseIpv6ToBytes(netStr, netBytes):
+      return false
+    let p = max(0, min(128, prefix))
+    let fullBytes = p div 8
+    let remBits = p mod 8
+    for i in 0 ..< fullBytes:
+      if ipBytes[i] != netBytes[i]:
+        return false
+    if remBits > 0 and fullBytes < 16:
+      let maskByte = byte(not ((1 shl (8 - remBits)) - 1))
+      if (ipBytes[fullBytes] and maskByte) != (netBytes[fullBytes] and maskByte):
+        return false
+    return true
+  elif cleaned.find(':') < 0 and netStr.find(':') < 0:
+    var ipNum, netNum: uint32
+    if not parseIpv4ToUint32(cleaned, ipNum) or not parseIpv4ToUint32(netStr, netNum):
+      return false
+    let p = max(0, min(32, prefix))
+    let mask = if p == 0: 0'u32
+               elif p >= 32: 0xFFFFFFFF'u32
+               else: not ((1'u32 shl uint32(32 - p)) - 1'u32)
+    return (ipNum and mask) == (netNum and mask)
+  else:
+    return false
+
+# ==============================================================================
+# Hosting Provider & Datacenter Identification (Phase 05 / Category C / Item 02)
+# ==============================================================================
+
+type
+  HostingProvider* = enum
+    ProviderNone,
+    ProviderDigitalOcean,
+    ProviderOVH,
+    ProviderHetzner,
+    ProviderAWS,
+    ProviderChoopa,
+    ProviderLinode,
+    ProviderGCP,
+    ProviderAzure,
+    ProviderOtherDatacenter
+
+  DatacenterInfo* = object
+    provider*: HostingProvider
+    providerName*: string
+    asn*: string
+    isDatacenter*: bool
+    riskPenalty*: int
+
+const KnownDatacenterCidrs*: seq[tuple[cidr: string, provider: HostingProvider]] = @[
+  # DigitalOcean (AS14061)
+  ("159.65.0.0/16", ProviderDigitalOcean),
+  ("167.99.0.0/16", ProviderDigitalOcean),
+  ("178.62.0.0/16", ProviderDigitalOcean),
+  ("138.68.0.0/16", ProviderDigitalOcean),
+  ("142.93.0.0/16", ProviderDigitalOcean),
+  ("104.248.0.0/16", ProviderDigitalOcean),
+  ("188.166.0.0/16", ProviderDigitalOcean),
+  ("206.189.0.0/16", ProviderDigitalOcean),
+  ("165.22.0.0/16", ProviderDigitalOcean),
+  ("134.209.0.0/16", ProviderDigitalOcean),
+  ("157.245.0.0/16", ProviderDigitalOcean),
+  ("164.90.0.0/16", ProviderDigitalOcean),
+  ("143.198.0.0/16", ProviderDigitalOcean),
+  ("64.225.0.0/16", ProviderDigitalOcean),
+  ("68.183.0.0/16", ProviderDigitalOcean),
+  ("2a03:b0c0::/32", ProviderDigitalOcean),
+
+  # OVH (AS16276)
+  ("198.27.64.0/18", ProviderOVH),
+  ("198.50.128.0/17", ProviderOVH),
+  ("192.99.0.0/16", ProviderOVH),
+  ("142.4.192.0/19", ProviderOVH),
+  ("151.80.0.0/16", ProviderOVH),
+  ("51.254.0.0/15", ProviderOVH),
+  ("54.36.0.0/15", ProviderOVH),
+  ("149.202.0.0/16", ProviderOVH),
+  ("178.32.0.0/15", ProviderOVH),
+  ("188.165.0.0/16", ProviderOVH),
+  ("213.186.32.0/19", ProviderOVH),
+  ("91.121.0.0/16", ProviderOVH),
+  ("94.23.0.0/16", ProviderOVH),
+  ("2001:41d0::/32", ProviderOVH),
+
+  # Hetzner (AS24940)
+  ("78.46.0.0/15", ProviderHetzner),
+  ("88.198.0.0/16", ProviderHetzner),
+  ("136.243.0.0/16", ProviderHetzner),
+  ("144.76.0.0/16", ProviderHetzner),
+  ("148.251.0.0/16", ProviderHetzner),
+  ("159.69.0.0/16", ProviderHetzner),
+  ("168.119.0.0/16", ProviderHetzner),
+  ("195.201.0.0/16", ProviderHetzner),
+  ("213.133.96.0/19", ProviderHetzner),
+  ("213.239.192.0/18", ProviderHetzner),
+  ("65.108.0.0/16", ProviderHetzner),
+  ("65.109.0.0/16", ProviderHetzner),
+  ("94.130.0.0/16", ProviderHetzner),
+  ("116.202.0.0/16", ProviderHetzner),
+  ("116.203.0.0/16", ProviderHetzner),
+  ("2a01:4f8::/32", ProviderHetzner),
+
+  # Amazon Web Services (AS16509)
+  ("3.0.0.0/9", ProviderAWS),
+  ("18.0.0.0/8", ProviderAWS),
+  ("52.0.0.0/11", ProviderAWS),
+  ("54.0.0.0/12", ProviderAWS),
+  ("54.144.0.0/12", ProviderAWS),
+  ("54.224.0.0/11", ProviderAWS),
+  ("34.192.0.0/12", ProviderAWS),
+  ("35.153.0.0/16", ProviderAWS),
+  ("44.192.0.0/10", ProviderAWS),
+  ("13.32.0.0/12", ProviderAWS),
+  ("2600:1f00::/24", ProviderAWS),
+
+  # Choopa / Vultr (AS20473)
+  ("45.32.0.0/16", ProviderChoopa),
+  ("45.76.0.0/16", ProviderChoopa),
+  ("45.77.0.0/16", ProviderChoopa),
+  ("108.61.0.0/16", ProviderChoopa),
+  ("149.28.0.0/16", ProviderChoopa),
+  ("207.246.64.0/18", ProviderChoopa),
+  ("209.250.224.0/19", ProviderChoopa),
+  ("216.238.64.0/18", ProviderChoopa),
+  ("2001:19f0::/32", ProviderChoopa),
+
+  # Linode (AS63949)
+  ("172.104.0.0/15", ProviderLinode),
+  ("173.255.192.0/18", ProviderLinode),
+  ("139.162.0.0/16", ProviderLinode),
+  ("45.33.0.0/16", ProviderLinode),
+  ("2600:3c00::/32", ProviderLinode),
+
+  # Google Cloud (AS15169)
+  ("34.64.0.0/11", ProviderGCP),
+  ("35.184.0.0/13", ProviderGCP),
+  ("2600:1900::/28", ProviderGCP),
+
+  # Microsoft Azure (AS8075)
+  ("13.64.0.0/11", ProviderAzure),
+  ("20.0.0.0/11", ProviderAzure),
+  ("40.64.0.0/10", ProviderAzure),
+  ("2603:1000::/24", ProviderAzure)
+]
+
+func getDatacenterInfo*(prov: HostingProvider): DatacenterInfo =
+  case prov
+  of ProviderDigitalOcean:
+    DatacenterInfo(provider: prov, providerName: "DigitalOcean", asn: "AS14061", isDatacenter: true, riskPenalty: 10)
+  of ProviderOVH:
+    DatacenterInfo(provider: prov, providerName: "OVH", asn: "AS16276", isDatacenter: true, riskPenalty: 10)
+  of ProviderHetzner:
+    DatacenterInfo(provider: prov, providerName: "Hetzner", asn: "AS24940", isDatacenter: true, riskPenalty: 10)
+  of ProviderAWS:
+    DatacenterInfo(provider: prov, providerName: "AWS", asn: "AS16509", isDatacenter: true, riskPenalty: 10)
+  of ProviderChoopa:
+    DatacenterInfo(provider: prov, providerName: "Choopa/Vultr", asn: "AS20473", isDatacenter: true, riskPenalty: 10)
+  of ProviderLinode:
+    DatacenterInfo(provider: prov, providerName: "Linode", asn: "AS63949", isDatacenter: true, riskPenalty: 10)
+  of ProviderGCP:
+    DatacenterInfo(provider: prov, providerName: "GCP", asn: "AS15169", isDatacenter: true, riskPenalty: 10)
+  of ProviderAzure:
+    DatacenterInfo(provider: prov, providerName: "Azure", asn: "AS8075", isDatacenter: true, riskPenalty: 10)
+  of ProviderOtherDatacenter:
+    DatacenterInfo(provider: prov, providerName: "Datacenter", asn: "AS-UNKNOWN", isDatacenter: true, riskPenalty: 5)
+  of ProviderNone:
+    DatacenterInfo(provider: ProviderNone, providerName: "", asn: "", isDatacenter: false, riskPenalty: 0)
+
+proc identifyHostingProvider*(ip: string): DatacenterInfo =
+  ## Identifies whether the specified client IP belongs to a known hosting provider or datacenter network.
+  let cleaned = cleanIpAddress(ip)
+  if cleaned.len == 0 or isPrivateIp(cleaned):
+    return getDatacenterInfo(ProviderNone)
+
+  for entry in KnownDatacenterCidrs:
+    if ipInSubnet(cleaned, entry.cidr):
+      return getDatacenterInfo(entry.provider)
+
+  getDatacenterInfo(ProviderNone)
+
+proc isKnownDatacenter*(ip: string): bool {.inline.} =
+  ## Returns true if the IP address belongs to a known datacenter hosting provider.
+  identifyHostingProvider(ip).isDatacenter
+
+# ==============================================================================
 # In-Memory Sliding Time Window Tracker (Phase 05 / Category B / Item 01)
 # ==============================================================================
 
@@ -568,19 +843,35 @@ type
     status404Ratio*: float          ## Ratio of 404 responses to total requests
     proxyRotationDetected*: bool    ## Whether residential proxy rotation was identified
     severity*: string               ## "Low", "Medium", "High", "Critical"
+    subnets*: seq[string]           ## Distinct subnets observed (Item 01)
+    hostingProviders*: seq[string]  ## Datacenter hosting providers observed (Item 02)
+    hasDatacenterIps*: bool         ## Whether cluster contains datacenter IPs (Item 02)
+    synchronizedBurstDetected*: bool ## Whether synchronized burst was observed (Item 03)
+    clusterTag*: string             ## Human-readable cluster tag (Item 04)
+
+  BurstProbe* = object
+    ## Recorded probe event with millisecond timestamp for synchronized burst detection (Item 03)
+    ip*: string
+    timestamp*: DateTime
+    pathPattern*: string
+    threatScore*: int
+    statusCode*: int
 
   ActorClusterTable* = ref object
     ## Dynamic registry linking disparate client IPs to unified ActorCluster records (Item 04)
     ## with in-memory sliding time window tracking (Item 01), sequence correlation (Item 02),
-    ## and residential proxy rotation detection (Item 03).
+    ## residential proxy rotation detection (Item 03), and subnet/burst clustering (Category C).
     clusters*: Table[string, ActorCluster]             ## Key: clusterId (e.g. "ACTOR-A4F1")
     ipToCluster*: Table[string, string]                ## Maps IP -> clusterId
     fingerprintToCluster*: Table[Hash, string]         ## Maps probe fingerprint -> clusterId
     sequenceToCluster*: Table[Hash, string]            ## Maps path sequence hash -> clusterId
+    subnetToCluster*: Table[string, string]            ## Maps subnet CIDR -> clusterId (Item 01)
     ipSequences*: Table[string, ProbeSequenceTracker]  ## Tracks recent probe path sequences per IP
     recentProbes*: seq[RecentProbe]                    ## Sliding buffer of recent probes for rotation detection
+    recentBurstProbes*: seq[BurstProbe]                ## Sliding buffer for synchronized burst detection (Item 03)
     windowTracker*: SlidingWindowTracker               ## In-memory sliding time window tracker
     proxyRotationThresholdSec*: int                    ## Max seconds between distinct IPs to flag proxy rotation
+    burstThresholdMs*: int64                           ## Max milliseconds between distinct IPs to flag burst (Item 03)
     processedCount*: int                               ## Running entry count since last automatic pruning
     pruneInterval*: int                                ## Auto-prune cadence (default: 1000 entries)
     lastPruneTime*: DateTime                           ## Timestamp of last pruning execution
@@ -620,6 +911,7 @@ func isExpired*(tracker: SlidingWindowTracker, lastSeen, currentTime: DateTime):
 proc newActorClusterTable*(
   windowSeconds: int = 1800,
   proxyRotationThresholdSec: int = 10,
+  burstThresholdMs: int64 = 1000,
   pruneInterval: int = 1000
 ): ActorClusterTable =
   ## Creates a new ActorClusterTable instance with configured correlation window.
@@ -628,10 +920,13 @@ proc newActorClusterTable*(
     ipToCluster: initTable[string, string](),
     fingerprintToCluster: initTable[Hash, string](),
     sequenceToCluster: initTable[Hash, string](),
+    subnetToCluster: initTable[string, string](),
     ipSequences: initTable[string, ProbeSequenceTracker](),
     recentProbes: @[],
+    recentBurstProbes: @[],
     windowTracker: initSlidingWindowTracker(windowSeconds),
     proxyRotationThresholdSec: if proxyRotationThresholdSec > 0: proxyRotationThresholdSec else: 10,
+    burstThresholdMs: if burstThresholdMs > 0: burstThresholdMs else: 1000,
     processedCount: 0,
     pruneInterval: if pruneInterval > 0: pruneInterval else: 1000,
     lastPruneTime: default(DateTime),
@@ -712,6 +1007,9 @@ proc deleteCluster*(table: ActorClusterTable, clusterId: string) =
     for ip in cluster.ips:
       table.ipToCluster.del(ip)
       table.ipSequences.del(ip)
+    for s in cluster.subnets:
+      if table.subnetToCluster.hasKey(s) and table.subnetToCluster[s] == clusterId:
+        table.subnetToCluster.del(s)
     table.clusters.del(clusterId)
 
 proc clear*(table: ActorClusterTable) =
@@ -720,8 +1018,10 @@ proc clear*(table: ActorClusterTable) =
   table.ipToCluster.clear()
   table.fingerprintToCluster.clear()
   table.sequenceToCluster.clear()
+  table.subnetToCluster.clear()
   table.ipSequences.clear()
   table.recentProbes.setLen(0)
+  table.recentBurstProbes.setLen(0)
   table.processedCount = 0
   table.clusterCounter = 0
 
@@ -743,6 +1043,9 @@ proc pruneExpired*(table: ActorClusterTable, currentTime: DateTime): int =
       for ip in cluster.ips:
         table.ipToCluster.del(ip)
         table.ipSequences.del(ip)
+      for s in cluster.subnets:
+        if table.subnetToCluster.hasKey(s) and table.subnetToCluster[s] == id:
+          table.subnetToCluster.del(s)
       table.clusters.del(id)
 
   # Clean fingerprintToCluster pointing to non-existent clusters
@@ -761,6 +1064,14 @@ proc pruneExpired*(table: ActorClusterTable, currentTime: DateTime): int =
   for sq in deadSeq:
     table.sequenceToCluster.del(sq)
 
+  # Clean subnetToCluster pointing to non-existent clusters
+  var deadSubnets: seq[string] = @[]
+  for s, cid in table.subnetToCluster:
+    if not table.clusters.hasKey(cid):
+      deadSubnets.add(s)
+  for s in deadSubnets:
+    table.subnetToCluster.del(s)
+
   # Also prune recentProbes older than max(windowSeconds, 300)
   let maxAge = max(table.windowTracker.windowSeconds, 300)
   var keepProbes: seq[RecentProbe] = @[]
@@ -772,7 +1083,148 @@ proc pruneExpired*(table: ActorClusterTable, currentTime: DateTime): int =
       keepProbes.add(p)
   table.recentProbes = keepProbes
 
+  # Prune recentBurstProbes older than maxAge
+  var keepBurst: seq[BurstProbe] = @[]
+  for b in table.recentBurstProbes:
+    if b.timestamp.isInitialized:
+      if (currentTime.toTime - b.timestamp.toTime).inSeconds <= maxAge:
+        keepBurst.add(b)
+    else:
+      keepBurst.add(b)
+  table.recentBurstProbes = keepBurst
+
   result = expiredIds.len
+
+# ==============================================================================
+# Synchronized Burst Detection (Phase 05 / Category C / Item 03)
+# ==============================================================================
+
+proc detectSynchronizedBurst*(
+  table: ActorClusterTable,
+  entry: HttpLogEntry,
+  thresholdMs: int64 = 1000
+): tuple[isBurst: bool, matchedIps: seq[string]] =
+  ## Identifies synchronized burst requests across distinct IP addresses occurring within milliseconds (Item 03).
+  if entry.clientIp.len == 0 or not entry.timestamp.isInitialized:
+    return (false, @[])
+
+  let curTime = entry.timestamp.toTime
+  let curMs = curTime.toUnix * 1000 + (entry.timestamp.nanosecond div 1_000_000)
+  var matched = initHashSet[string]()
+
+  for p in table.recentBurstProbes:
+    if p.ip != entry.clientIp and p.timestamp.isInitialized:
+      let pTime = p.timestamp.toTime
+      let pMs = pTime.toUnix * 1000 + (p.timestamp.nanosecond div 1_000_000)
+      let deltaMs = abs(curMs - pMs)
+      if deltaMs <= thresholdMs:
+        let samePath = p.pathPattern.len > 0 and p.pathPattern == normalizePathPattern(entry.path)
+        let bothErr = entry.statusCode in 400..599 and p.statusCode in 400..599
+        let bothSuspicious = p.threatScore >= 20
+        if samePath or bothErr or bothSuspicious:
+          matched.incl(p.ip)
+
+  if matched.len > 0:
+    var ips: seq[string] = @[]
+    for ip in matched: ips.add(ip)
+    return (true, ips)
+  else:
+    return (false, @[])
+
+proc isSynchronizedBurst*(cluster: ActorCluster): bool {.inline.} =
+  ## Returns true if synchronized burst requests were detected for this cluster.
+  cluster.synchronizedBurstDetected
+
+# ==============================================================================
+# Human-Readable Cluster Tags (Phase 05 / Category C / Item 04)
+# ==============================================================================
+
+func formatClusterTag*(cluster: ActorCluster, actorNumber: int = -1): string =
+  ## Formats a human-readable tag for the cluster (Item 04).
+  ## e.g.: ``[Actor #12: 18 IPs - WP-Scan Botnet]``
+  ##       ``[Actor #1: 5 IPs (DigitalOcean /24) - DotEnv Probe]``
+  ##       ``[Actor #3: 12 IPs (Hetzner /24) - SQLi Exploit Cluster]``
+  ##       ``[Actor #4: 8 IPs - Synchronized Burst Fleet]``
+  ##       ``[Actor #5: 10 IPs - Rotating Proxy Botnet]``
+  ##       ``[Actor #7: 1 IP - Log4Shell Scanner]``
+
+  let num = if actorNumber > 0:
+              "#" & $actorNumber
+            elif cluster.clusterId.len > 0:
+              var digits = ""
+              for c in cluster.clusterId:
+                if c in {'0'..'9'}: digits.add(c)
+              if digits.len > 0: "#" & digits else: "#1"
+            else:
+              "#1"
+
+  let ipCount = cluster.ips.len
+  let ipStr = if ipCount <= 1: "1 IP" else: $ipCount & " IPs"
+
+  # Qualification (Provider / Subnet)
+  var qual = ""
+  if cluster.hostingProviders.len > 0:
+    var pList: seq[string] = @[]
+    for p in cluster.hostingProviders: pList.add(p)
+    pList.sort()
+    let prov = pList[0]
+    if cluster.subnets.len == 1:
+      var sList: seq[string] = @[]
+      for s in cluster.subnets: sList.add(s)
+      let slashIdx = sList[0].find('/')
+      let prefix = if slashIdx >= 0: sList[0][slashIdx .. ^1] else: "/24"
+      qual = " (" & prov & " " & prefix & ")"
+    else:
+      qual = " (" & prov & ")"
+  elif cluster.subnets.len == 1:
+    var sList: seq[string] = @[]
+    for s in cluster.subnets: sList.add(s)
+    let slashIdx = sList[0].find('/')
+    let prefix = if slashIdx >= 0: sList[0][slashIdx .. ^1] else: "/24"
+    qual = " (" & prefix & ")"
+
+  # Attack signature label
+  var attackLabel = ""
+  if ThreatCmsExploit in cluster.flags:
+    attackLabel = "WP-Scan Botnet"
+  elif ThreatSensitiveFile in cluster.flags:
+    attackLabel = "DotEnv/Config Scanner"
+  elif ThreatSqlInjection in cluster.flags:
+    attackLabel = "SQLi Exploit Cluster"
+  elif ThreatCommandInjection in cluster.flags:
+    attackLabel = "RCE Exploit Botnet"
+  elif ThreatDirectoryTraversal in cluster.flags:
+    attackLabel = "Path Traversal Probe"
+  elif cluster.synchronizedBurstDetected and cluster.ips.len >= 2:
+    attackLabel = "Synchronized Burst Fleet"
+  elif cluster.proxyRotationDetected and cluster.ips.len >= 2:
+    attackLabel = "Rotating Proxy Botnet"
+  else:
+    var isWp = false
+    var isEnv = false
+    var isJndi = false
+    for p in cluster.probedPaths:
+      let lp = p.toLowerAscii()
+      if lp.contains("wp-") or lp.contains("xmlrpc"): isWp = true
+      elif lp.contains(".env") or lp.contains("config"): isEnv = true
+      elif lp.contains("jndi") or lp.contains("ldap"): isJndi = true
+
+    if isWp: attackLabel = "WP-Scan Botnet"
+    elif isEnv: attackLabel = "DotEnv Probe"
+    elif isJndi: attackLabel = "Log4Shell Scanner"
+    elif cluster.category == CategoryCommercialBot: attackLabel = "Commercial Scraper Fleet"
+    elif cluster.category == CategoryVerifiedBot: attackLabel = "Verified Crawler Fleet"
+    elif cluster.category == CategorySuspicious: attackLabel = "Suspicious Scanner"
+    elif cluster.category == CategoryBadActorHacker: attackLabel = "Hostile Exploit Botnet"
+    else: attackLabel = "Traffic Cluster"
+
+  if qual.len > 0:
+    result = "[Actor " & num & ": " & ipStr & qual & " - " & attackLabel & "]"
+  else:
+    result = "[Actor " & num & ": " & ipStr & " - " & attackLabel & "]"
+
+func clusterTag*(cluster: ActorCluster, actorNumber: int = -1): string {.inline.} =
+  formatClusterTag(cluster, actorNumber)
 
 # ==============================================================================
 # Residential Proxy Rotation Detection (Phase 05 / Category B / Item 03)
@@ -823,7 +1275,7 @@ proc correlateRecord*(
 ): Option[string] =
   ## Correlates an incoming HTTP log entry with existing multi-IP actor clusters.
   ## Synthesizes behavioral fingerprints, probe sequences, sliding window recency,
-  ## and residential proxy rotation heuristics (Items 01, 02, 03, 04).
+  ## residential proxy rotation, synchronized bursts, subnet proximity, and datacenter telemetry.
   ## Returns some(clusterId) if matched or clustered, or none(string) if benign/unmatched.
 
   # 1. Automatic periodic pruning check
@@ -846,8 +1298,11 @@ proc correlateRecord*(
   table.ipSequences[entry.clientIp].addPath(entry.path)
   let seqHash = table.ipSequences[entry.clientIp].sequenceHash()
 
-  # 4. Check for residential proxy rotation
+  # 4. Extract Subnet and Datacenter info, check Proxy Rotation & Synchronized Burst
+  let subnet = extractSubnetCidr(entry.clientIp)
+  let dcInfo = identifyHostingProvider(entry.clientIp)
   let proxyRotating = table.detectProxyRotation(entry, threat, normPath, normUa)
+  let (burstDetected, burstIps) = table.detectSynchronizedBurst(entry, table.burstThresholdMs)
 
   # 5. Search for existing matching active cluster
   var matchedClusterId = ""
@@ -870,7 +1325,16 @@ proc correlateRecord*(
     if table.clusters.hasKey(cid) and not table.windowTracker.isExpired(table.clusters[cid].lastSeen, entry.timestamp):
       matchedClusterId = cid
 
-  # (d) If proxy rotation detected within seconds, correlate with the most recent matching probe's cluster
+  # (d) Check if synchronized burst links to an active cluster (Item 03)
+  if matchedClusterId.len == 0 and burstDetected and burstIps.len > 0:
+    for bIp in burstIps:
+      if table.ipToCluster.hasKey(bIp):
+        let cid = table.ipToCluster[bIp]
+        if table.clusters.hasKey(cid) and not table.windowTracker.isExpired(table.clusters[cid].lastSeen, entry.timestamp):
+          matchedClusterId = cid
+          break
+
+  # (e) If proxy rotation detected within seconds, correlate with the most recent matching probe's cluster
   if matchedClusterId.len == 0 and proxyRotating and table.recentProbes.len > 0:
     for i in countdown(table.recentProbes.len - 1, 0):
       let p = table.recentProbes[i]
@@ -880,7 +1344,18 @@ proc correlateRecord*(
           matchedClusterId = cid
           break
 
-  # (e) Jaccard similarity fallback: check active clusters with identical/similar UA
+  # (f) Check if IP resides in the same /24 or /64 subnet as an active cluster (Item 01)
+  if matchedClusterId.len == 0 and subnet.len > 0 and table.subnetToCluster.hasKey(subnet):
+    let sCid = table.subnetToCluster[subnet]
+    if table.clusters.hasKey(sCid) and not table.windowTracker.isExpired(table.clusters[sCid].lastSeen, entry.timestamp):
+      let cl = table.clusters[sCid]
+      if (threat.category in {CategorySuspicious, CategoryBadActorHacker} and cl.category in {CategorySuspicious, CategoryBadActorHacker}) or
+         (threat.flags * cl.flags).len > 0 or
+         (normPath.len > 0 and isPathSimilarityAbove(cl.probedPaths, @[entry.path], 0.30)) or
+         (dcInfo.isDatacenter and cl.hasDatacenterIps):
+        matchedClusterId = sCid
+
+  # (g) Jaccard similarity fallback: check active clusters with identical/similar UA
   if matchedClusterId.len == 0 and normUa.len > 0:
     for cid, cl in table.clusters:
       if not table.windowTracker.isExpired(cl.lastSeen, entry.timestamp):
@@ -889,7 +1364,7 @@ proc correlateRecord*(
             matchedClusterId = cid
             break
 
-  # Record this probe in the recent probes buffer for rotation tracking
+  # Record this probe in sliding buffers
   table.recentProbes.add(RecentProbe(
     ip: entry.clientIp,
     timestamp: entry.timestamp,
@@ -897,20 +1372,41 @@ proc correlateRecord*(
     normalizedUa: normUa,
     threatScore: threat.score
   ))
-  # Bound recentProbes buffer to 100 items
   if table.recentProbes.len > 100:
     table.recentProbes.delete(0)
+
+  table.recentBurstProbes.add(BurstProbe(
+    ip: entry.clientIp,
+    timestamp: entry.timestamp,
+    pathPattern: normPath,
+    threatScore: threat.score,
+    statusCode: entry.statusCode
+  ))
+  if table.recentBurstProbes.len > 100:
+    table.recentBurstProbes.delete(0)
 
   # 6. Apply correlation update or cluster creation
   if matchedClusterId.len > 0 and table.clusters.hasKey(matchedClusterId):
     let cluster = table.clusters[matchedClusterId]
     cluster.addEntry(entry, threat.score, threat.category, threat.flags)
+    if subnet.len > 0:
+      cluster.subnets.incl(subnet)
+    if dcInfo.isDatacenter:
+      cluster.hasDatacenterIps = true
+      cluster.hostingProviders.incl(dcInfo.providerName)
     if proxyRotating:
       cluster.proxyRotationDetected = true
       inc cluster.proxyRotationCount
+    if burstDetected:
+      cluster.synchronizedBurstDetected = true
+      inc cluster.synchronizedBurstCount
+    cluster.clusterTag = formatClusterTag(cluster, table.clusterCounter)
+
     table.ipToCluster[entry.clientIp] = matchedClusterId
     table.fingerprintToCluster[fp] = matchedClusterId
     table.sequenceToCluster[seqHash] = matchedClusterId
+    if subnet.len > 0:
+      table.subnetToCluster[subnet] = matchedClusterId
     return some(matchedClusterId)
 
   # 7. Create new cluster
@@ -919,6 +1415,14 @@ proc correlateRecord*(
   let newId = "ACTOR-" & baseHex & align(toHex(table.clusterCounter, 2).toUpperAscii(), 2, '0')
   var ipSet = initHashSet[string]()
   ipSet.incl(entry.clientIp)
+
+  var subnetSet = initHashSet[string]()
+  if subnet.len > 0:
+    subnetSet.incl(subnet)
+
+  var provSet = initHashSet[string]()
+  if dcInfo.isDatacenter:
+    provSet.incl(dcInfo.providerName)
 
   let newCluster = newActorCluster(
     clusterId = newId,
@@ -935,13 +1439,21 @@ proc correlateRecord*(
     flags = threat.flags,
     probedPaths = (if entry.path.len > 0: @[entry.path] else: @[]),
     proxyRotationDetected = proxyRotating,
-    proxyRotationCount = (if proxyRotating: 1 else: 0)
+    proxyRotationCount = (if proxyRotating: 1 else: 0),
+    subnets = subnetSet,
+    hostingProviders = provSet,
+    hasDatacenterIps = dcInfo.isDatacenter,
+    synchronizedBurstDetected = burstDetected,
+    synchronizedBurstCount = (if burstDetected: 1 else: 0)
   )
+  newCluster.clusterTag = formatClusterTag(newCluster, table.clusterCounter)
 
   table.clusters[newId] = newCluster
   table.ipToCluster[entry.clientIp] = newId
   table.fingerprintToCluster[fp] = newId
   table.sequenceToCluster[seqHash] = newId
+  if subnet.len > 0:
+    table.subnetToCluster[subnet] = newId
 
   return some(newId)
 
@@ -981,7 +1493,8 @@ func formatDuration*(d: Duration): string =
 
 proc calculateClusterMetrics*(cluster: ActorCluster): ClusterRiskMetrics =
   ## Calculates multi-dimensional cluster risk metrics including request velocity,
-  ## distributed IP fleet size, targeted endpoint diversity, and proxy rotation (Item 05).
+  ## distributed IP fleet size, targeted endpoint diversity, proxy rotation,
+  ## hosting providers, synchronized bursts, and subnet coverage (Item 05).
   let dur = cluster.attackDuration
   let durSec = dur.inSeconds
   let uIps = cluster.ips.len
@@ -1000,6 +1513,18 @@ proc calculateClusterMetrics*(cluster: ActorCluster): ClusterRiskMetrics =
   if cluster.proxyRotationDetected:
     risk += 15
 
+  # Datacenter hosting penalty (Item 02)
+  if cluster.hasDatacenterIps:
+    risk += 10
+
+  # Synchronized burst penalty (Item 03)
+  if cluster.synchronizedBurstDetected:
+    risk += 15
+
+  # Multi-subnet spread penalty (Item 01)
+  if cluster.subnets.len >= 2:
+    risk += 5
+
   # Endpoint targeting diversity
   if targets >= 3: risk += 5
   if targets >= 7: risk += 10
@@ -1016,6 +1541,16 @@ proc calculateClusterMetrics*(cluster: ActorCluster): ClusterRiskMetrics =
     elif risk >= 25: "Medium"
     else: "Low"
 
+  var subnetsSeq: seq[string] = @[]
+  for s in cluster.subnets: subnetsSeq.add(s)
+  subnetsSeq.sort()
+
+  var provsSeq: seq[string] = @[]
+  for p in cluster.hostingProviders: provsSeq.add(p)
+  provsSeq.sort()
+
+  let tag = if cluster.clusterTag.len > 0: cluster.clusterTag else: formatClusterTag(cluster)
+
   ClusterRiskMetrics(
     clusterId: cluster.clusterId,
     totalRequests: cluster.totalRequests,
@@ -1028,25 +1563,48 @@ proc calculateClusterMetrics*(cluster: ActorCluster): ClusterRiskMetrics =
     status404Count: cluster.status404Count,
     status404Ratio: ratio404,
     proxyRotationDetected: cluster.proxyRotationDetected,
-    severity: sev
+    severity: sev,
+    subnets: subnetsSeq,
+    hostingProviders: provsSeq,
+    hasDatacenterIps: cluster.hasDatacenterIps,
+    synchronizedBurstDetected: cluster.synchronizedBurstDetected,
+    clusterTag: tag
   )
 
 proc `$`*(metrics: ClusterRiskMetrics): string =
   ## Canonical stringifier for ClusterRiskMetrics.
+  var extras: seq[string] = @[]
+  if metrics.clusterTag.len > 0: extras.add("Tag: " & metrics.clusterTag)
+  if metrics.proxyRotationDetected: extras.add("ProxyRotation: true")
+  if metrics.synchronizedBurstDetected: extras.add("Burst: true")
+  if metrics.hasDatacenterIps: extras.add("Datacenter: true")
+  if metrics.subnets.len > 0: extras.add("Subnets: " & $metrics.subnets.len)
+  let extraStr = if extras.len > 0: ", " & extras.join(", ") else: ""
+
   "ClusterRiskMetrics(id: " & metrics.clusterId &
     ", IPs: " & $metrics.uniqueIps &
     ", Req: " & $metrics.totalRequests &
     ", Targets: " & $metrics.affectedTargets &
     ", Duration: " & formatDuration(metrics.attackDuration) &
     ", Risk: " & $metrics.aggregateRisk & " [" & metrics.severity & "]" &
-    (if metrics.proxyRotationDetected: ", ProxyRotation: true" else: "") & ")"
+    extraStr & ")"
 
 proc `%`*(metrics: ClusterRiskMetrics): JsonNode =
   ## Serializes ClusterRiskMetrics into a JSON node.
+  var subnetsArr = newJArray()
+  for s in metrics.subnets: subnetsArr.add(%s)
+  var provArr = newJArray()
+  for p in metrics.hostingProviders: provArr.add(%p)
+
   %*{
     "clusterId": metrics.clusterId,
+    "clusterTag": metrics.clusterTag,
     "totalRequests": metrics.totalRequests,
     "uniqueIps": metrics.uniqueIps,
+    "subnets": subnetsArr,
+    "hostingProviders": provArr,
+    "hasDatacenterIps": metrics.hasDatacenterIps,
+    "synchronizedBurstDetected": metrics.synchronizedBurstDetected,
     "affectedTargets": metrics.affectedTargets,
     "attackDurationSeconds": metrics.attackDurationSeconds,
     "attackDurationFormatted": formatDuration(metrics.attackDuration),
