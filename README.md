@@ -90,6 +90,7 @@ High-performance HTTP log viewer and rogue bot detector written in Nim. `http_lo
   - [Attack Signature & Payload Detection](#10-attack-signature--payload-detection)
   - [User-Agent Taxonomy & Bot Identification](#11-user-agent-taxonomy--bot-identification)
   - [Behavioral Heuristics & Anomaly Scoring](#12-behavioral-heuristics--anomaly-scoring)
+  - [Actor Fingerprint Synthesis & Multi-IP Correlation](#13-actor-fingerprint-synthesis--multi-ip-correlation)
 - [Examples](#examples)
 - [Development and Documentation](#development-and-documentation)
 - [Attribution and License](#attribution-and-license)
@@ -787,6 +788,69 @@ nim r --path:src examples/behavioral_heuristics.nim
 
 ---
 
+### 13. Actor Fingerprint Synthesis & Multi-IP Correlation
+
+The `http_logviewer/analyzer/correlator` module implements behavioral fingerprinting, attack sequence hashing, query parameter normalization, and Jaccard similarity scoring to correlate distributed attacks across disparate IP addresses:
+
+- **Actor Fingerprint Synthesis**: Combines normalized User-Agent strings, sorted threat signatures, normalized structural path patterns, and HTTP Accept headers into deterministic 64-bit hashes and hexadecimal identifiers (`hashHex`), allowing requests from distinct IP addresses that belong to the exact same botnet fleet to be mapped to a single unified entity.
+- **URL Path Sequence Hasher**: Hashes multi-step attack patterns (`probeA -> probeB -> probeC`) in sequential order while masking dynamic integer IDs (`/users/{id}`), UUIDs (`{uuid}`), and cryptographic hashes (`{hash}`) to detect coordinated traversal or exploit workflows. Includes `ProbeSequenceTracker` for sliding-window sequence tracking.
+- **Query Parameter Normalization**: Strips rotating ephemeral cache-busting tokens (`_`, `cb`, `nocache`, `timestamp`, `ts`, `rand`, `v`) and sorts remaining parameters alphabetically. Prevents evasive scanners from escaping fingerprint deduplication by simply randomizing query strings.
+- **Jaccard Similarity Scoring**: Computes exact set overlap ($J(A,B) = |A \cap B| / |A \cup B|$) on normalized probed endpoint collections. Provides `fingerprintSimilarity` aggregating User-Agent identity, threat signature overlap, and probed path similarity into a normalized metric (0.0 .. 1.0).
+- **Session Identifier & Token Extraction**: Extracts known session cookies (`phpsessid`), API tokens, tracking keys (`token`, `api_key`), and campaign IDs from query parameters, referers, and raw log lines (`hasSharedSessionToken`, `getSharedSessionTokens`) to definitively link multi-IP requests.
+- **Multi-IP Botnet Validation**: Successfully groups rotating residential proxy fleets and multi-node cloud scanner networks executing identical attack campaigns.
+
+```nim
+import http_logviewer/analyzer/correlator
+import http_logviewer/core/types
+
+# 1. Synthesize identical fingerprints across distinct IP addresses
+let node1 = initHttpLogEntry(
+  clientIp = "185.220.101.5",
+  path = "/.env?_=1700000001",
+  `method` = HttpGet,
+  userAgent = "Masscan/1.3.2"
+)
+let node2 = initHttpLogEntry(
+  clientIp = "45.154.255.12",
+  path = "/.env?cb=random123",
+  `method` = HttpGet,
+  userAgent = "Masscan/1.3.2"
+)
+let threat = initThreatProfile(score = 85, matchedSignatures = @["SensitiveFile:DotEnv"])
+
+let fp1 = generateActorFingerprint(node1, threat, "*/*")
+let fp2 = generateActorFingerprint(node2, threat, "*/*")
+
+# Both rotating nodes generate the exact same fingerprint!
+assert fp1.rawHash == fp2.rawHash
+assert fp1.hashHex == fp2.hashHex
+
+# 2. Structural path sequence hashing
+let attackSeq = @["/.env", "/wp-login.php", "/xmlrpc.php"]
+let seqHash = hashPathSequence(attackSeq)
+assert formatPathSequence(attackSeq) == "/.env -> /wp-login.php -> /xmlrpc.php"
+
+# 3. Jaccard similarity across probed endpoints
+let clusterA = ["/wp-login.php", "/.env", "/xmlrpc.php"]
+let clusterB = ["/wp-login.php", "/.env", "/xmlrpc.php", "/backup.sql"]
+assert pathSetSimilarity(clusterA, clusterB) == 0.75
+```
+
+#### Terminal Demonstration
+
+The recording below demonstrates behavioral fingerprint generation, URL path sequence hashing, cache-buster parameter normalization, Jaccard similarity scoring, and 4-node distributed botnet equivalence:
+
+![Actor Fingerprint Synthesis & Multi-IP Correlation](docs/images/actor_fingerprint_synthesis.gif)
+
+> *Source session recording:* [`docs/recordings/actor_fingerprint_synthesis.cast`](docs/recordings/actor_fingerprint_synthesis.cast) *(recorded with Asciinema, rendered via Agg with JetBrainsMono Nerd Font Mono)*.
+
+Compile and run this example:
+```bash
+nim r --path:src examples/actor_fingerprint_synthesis.nim
+```
+
+---
+
 ## Examples
 
 The `examples/` folder provides executable demonstrations of each pipeline layer:
@@ -804,6 +868,7 @@ The `examples/` folder provides executable demonstrations of each pipeline layer
 - [`examples/attack_signatures_and_payloads.nim`](examples/attack_signatures_and_payloads.nim): Hostile attack signatures, OWASP Top 10 vectors, sensitive file probes, CMS exploits, directory traversal, SQLi, RCE, and Log4j detection.
 - [`examples/user_agent_taxonomy.nim`](examples/user_agent_taxonomy.nim): User-Agent taxonomy, verified search engines, commercial crawlers, offensive security scanners, generic HTTP libraries, and anomaly detection.
 - [`examples/behavioral_heuristics.nim`](examples/behavioral_heuristics.nim): Behavioral heuristics, static asset ratios, 404 velocity, method anomaly scoring, and composite risk classification.
+- [`examples/actor_fingerprint_synthesis.nim`](examples/actor_fingerprint_synthesis.nim): Actor fingerprint synthesis, User-Agent normalization, path sequence hashing, cache-buster stripping, Jaccard similarity, and multi-IP botnet correlation.
 - [`examples/pipeline_scaffolding.nim`](examples/pipeline_scaffolding.nim): Cross-module pipeline event envelope demonstration.
 
 ---

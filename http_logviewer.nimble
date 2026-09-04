@@ -62,5 +62,7 @@ task clean, "Clean all build artifacts":
     rmFile "build/t_useragents"
   if fileExists("build/t_classifier"):
     rmFile "build/t_classifier"
+  if fileExists("build/t_correlator"):
+    rmFile "build/t_correlator"
   if fileExists("build/test_all"):
     rmFile "build/test_all"

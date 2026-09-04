@@ -15,4 +15,5 @@ import t_bogon_private_ip
 import t_signatures
 import t_useragents
 import t_classifier
+import t_correlator
 import test1
