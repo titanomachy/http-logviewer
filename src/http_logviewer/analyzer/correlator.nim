@@ -536,3 +536,524 @@ proc `%`*(fp: ActorFingerprint): JsonNode =
     "pathPattern": fp.pathPattern,
     "sessionTokens": tokArr
   }
+
+# ==============================================================================
+# In-Memory Sliding Time Window Tracker (Phase 05 / Category B / Item 01)
+# ==============================================================================
+
+type
+  SlidingWindowTracker* = object
+    ## Tracks time intervals and calculates window boundaries for multi-IP correlation.
+    windowSeconds*: int             ## Correlation window in seconds (default 1800 = 30 min)
+
+  RecentProbe* = object
+    ## Recorded recent vulnerability probe for proxy rotation analysis
+    ip*: string
+    timestamp*: DateTime
+    pathPattern*: string
+    normalizedUa*: string
+    threatScore*: int
+
+  ClusterRiskMetrics* = object
+    ## Comprehensive security posture and risk metrics for an actor cluster (Item 05)
+    clusterId*: string
+    totalRequests*: int
+    uniqueIps*: int
+    affectedTargets*: int           ## Number of unique probed endpoints
+    attackDuration*: Duration       ## Duration between firstSeen and lastSeen
+    attackDurationSeconds*: int64   ## Duration in seconds
+    highestThreatScore*: int        ## Highest individual request score (0..100)
+    aggregateRisk*: int             ## Composite cluster risk score (0..100)
+    status404Count*: int
+    status404Ratio*: float          ## Ratio of 404 responses to total requests
+    proxyRotationDetected*: bool    ## Whether residential proxy rotation was identified
+    severity*: string               ## "Low", "Medium", "High", "Critical"
+
+  ActorClusterTable* = ref object
+    ## Dynamic registry linking disparate client IPs to unified ActorCluster records (Item 04)
+    ## with in-memory sliding time window tracking (Item 01), sequence correlation (Item 02),
+    ## and residential proxy rotation detection (Item 03).
+    clusters*: Table[string, ActorCluster]             ## Key: clusterId (e.g. "ACTOR-A4F1")
+    ipToCluster*: Table[string, string]                ## Maps IP -> clusterId
+    fingerprintToCluster*: Table[Hash, string]         ## Maps probe fingerprint -> clusterId
+    sequenceToCluster*: Table[Hash, string]            ## Maps path sequence hash -> clusterId
+    ipSequences*: Table[string, ProbeSequenceTracker]  ## Tracks recent probe path sequences per IP
+    recentProbes*: seq[RecentProbe]                    ## Sliding buffer of recent probes for rotation detection
+    windowTracker*: SlidingWindowTracker               ## In-memory sliding time window tracker
+    proxyRotationThresholdSec*: int                    ## Max seconds between distinct IPs to flag proxy rotation
+    processedCount*: int                               ## Running entry count since last automatic pruning
+    pruneInterval*: int                                ## Auto-prune cadence (default: 1000 entries)
+    lastPruneTime*: DateTime                           ## Timestamp of last pruning execution
+    clusterCounter*: int                               ## Monotonic counter for unique cluster IDs
+
+  ActorCorrelator* = ActorClusterTable
+
+func initSlidingWindowTracker*(windowSeconds: int = 1800): SlidingWindowTracker =
+  ## Initializes a sliding time window tracker with specified duration in seconds.
+  let win = if windowSeconds > 0: windowSeconds else: 1800
+  SlidingWindowTracker(windowSeconds: win)
+
+func windowDuration*(tracker: SlidingWindowTracker): Duration =
+  ## Returns the time window as a std/times Duration.
+  initDuration(seconds = tracker.windowSeconds)
+
+func windowMinutes*(tracker: SlidingWindowTracker): float =
+  ## Returns the time window duration in minutes.
+  tracker.windowSeconds.float / 60.0
+
+func isWithinWindow*(tracker: SlidingWindowTracker, t1, t2: DateTime): bool =
+  ## Returns true if the two timestamps fall within the sliding time window.
+  if not t1.isInitialized or not t2.isInitialized:
+    return true
+  abs((t2.toTime - t1.toTime).inSeconds) <= tracker.windowSeconds
+
+func isExpired*(tracker: SlidingWindowTracker, lastSeen, currentTime: DateTime): bool =
+  ## Returns true if the lastSeen timestamp is older than the sliding window relative to currentTime.
+  if not lastSeen.isInitialized or not currentTime.isInitialized:
+    return false
+  (currentTime.toTime - lastSeen.toTime).inSeconds > tracker.windowSeconds
+
+# ==============================================================================
+# ActorClusterTable Construction & Dynamic IP Linking (Phase 05 / Category B / Item 04)
+# ==============================================================================
+
+proc newActorClusterTable*(
+  windowSeconds: int = 1800,
+  proxyRotationThresholdSec: int = 10,
+  pruneInterval: int = 1000
+): ActorClusterTable =
+  ## Creates a new ActorClusterTable instance with configured correlation window.
+  ActorClusterTable(
+    clusters: initTable[string, ActorCluster](),
+    ipToCluster: initTable[string, string](),
+    fingerprintToCluster: initTable[Hash, string](),
+    sequenceToCluster: initTable[Hash, string](),
+    ipSequences: initTable[string, ProbeSequenceTracker](),
+    recentProbes: @[],
+    windowTracker: initSlidingWindowTracker(windowSeconds),
+    proxyRotationThresholdSec: if proxyRotationThresholdSec > 0: proxyRotationThresholdSec else: 10,
+    processedCount: 0,
+    pruneInterval: if pruneInterval > 0: pruneInterval else: 1000,
+    lastPruneTime: default(DateTime),
+    clusterCounter: 0
+  )
+
+proc newActorCorrelator*(windowSeconds: int = 1800): ActorCorrelator =
+  ## Factory constructor for ActorCorrelator (alias to ActorClusterTable).
+  newActorClusterTable(windowSeconds = windowSeconds)
+
+proc windowSeconds*(table: ActorClusterTable): int {.inline.} =
+  table.windowTracker.windowSeconds
+
+proc `windowSeconds=`*(table: ActorClusterTable, sec: int) =
+  table.windowTracker.windowSeconds = if sec > 0: sec else: 1800
+
+proc linkIp*(table: ActorClusterTable, ip: string, cluster: ActorCluster) =
+  ## Dynamically associates a client IP with an ActorCluster record (Item 04).
+  if ip.len == 0 or cluster == nil:
+    return
+  table.ipToCluster[ip] = cluster.clusterId
+  cluster.ips.incl(ip)
+
+proc getClusterForIp*(table: ActorClusterTable, ip: string): Option[ActorCluster] =
+  ## Retrieves the ActorCluster associated with the specified client IP, if mapped and present.
+  if table.ipToCluster.hasKey(ip):
+    let cid = table.ipToCluster[ip]
+    if table.clusters.hasKey(cid):
+      return some(table.clusters[cid])
+  none(ActorCluster)
+
+proc hasClusterForIp*(table: ActorClusterTable, ip: string): bool =
+  ## Returns true if the specified IP is actively mapped to an existing cluster.
+  table.getClusterForIp(ip).isSome
+
+proc getCluster*(table: ActorClusterTable, clusterId: string): Option[ActorCluster] =
+  ## Retrieves a cluster by its unique cluster ID.
+  if table.clusters.hasKey(clusterId):
+    return some(table.clusters[clusterId])
+  none(ActorCluster)
+
+proc hasKey*(table: ActorClusterTable, clusterId: string): bool {.inline.} =
+  table.clusters.hasKey(clusterId)
+
+proc contains*(table: ActorClusterTable, clusterId: string): bool {.inline.} =
+  table.clusters.hasKey(clusterId)
+
+proc `[]`*(table: ActorClusterTable, clusterId: string): ActorCluster {.inline.} =
+  table.clusters[clusterId]
+
+proc len*(table: ActorClusterTable): int {.inline.} =
+  table.clusters.len
+
+proc ipCount*(table: ActorClusterTable): int {.inline.} =
+  table.ipToCluster.len
+
+proc allClusters*(table: ActorClusterTable): seq[ActorCluster] =
+  ## Returns all tracked clusters as a sequence.
+  result = @[]
+  for _, c in table.clusters:
+    result.add(c)
+
+proc activeClusters*(table: ActorClusterTable, currentTime: DateTime): seq[ActorCluster] =
+  ## Returns all active clusters within the sliding window relative to currentTime.
+  result = @[]
+  for _, c in table.clusters:
+    if not table.windowTracker.isExpired(c.lastSeen, currentTime):
+      result.add(c)
+
+proc activeClusterCount*(table: ActorClusterTable, currentTime: DateTime): int =
+  ## Returns the count of active clusters within the sliding window.
+  table.activeClusters(currentTime).len
+
+proc deleteCluster*(table: ActorClusterTable, clusterId: string) =
+  ## Deletes a cluster and unlinks its associated IP addresses and hashes.
+  if table.clusters.hasKey(clusterId):
+    let cluster = table.clusters[clusterId]
+    for ip in cluster.ips:
+      table.ipToCluster.del(ip)
+      table.ipSequences.del(ip)
+    table.clusters.del(clusterId)
+
+proc clear*(table: ActorClusterTable) =
+  ## Clears all clusters, mappings, probe sequences, and tracking buffers.
+  table.clusters.clear()
+  table.ipToCluster.clear()
+  table.fingerprintToCluster.clear()
+  table.sequenceToCluster.clear()
+  table.ipSequences.clear()
+  table.recentProbes.setLen(0)
+  table.processedCount = 0
+  table.clusterCounter = 0
+
+proc pruneExpired*(table: ActorClusterTable, currentTime: DateTime): int =
+  ## Prunes clusters and associated mapping indexes whose lastSeen timestamp
+  ## exceeds the sliding window duration relative to currentTime (Item 01).
+  ## Returns the number of pruned clusters.
+  if not currentTime.isInitialized:
+    return 0
+  table.lastPruneTime = currentTime
+  var expiredIds: seq[string] = @[]
+  for id, cluster in table.clusters:
+    if table.windowTracker.isExpired(cluster.lastSeen, currentTime):
+      expiredIds.add(id)
+
+  for id in expiredIds:
+    if table.clusters.hasKey(id):
+      let cluster = table.clusters[id]
+      for ip in cluster.ips:
+        table.ipToCluster.del(ip)
+        table.ipSequences.del(ip)
+      table.clusters.del(id)
+
+  # Clean fingerprintToCluster pointing to non-existent clusters
+  var deadFp: seq[Hash] = @[]
+  for fp, cid in table.fingerprintToCluster:
+    if not table.clusters.hasKey(cid):
+      deadFp.add(fp)
+  for fp in deadFp:
+    table.fingerprintToCluster.del(fp)
+
+  # Clean sequenceToCluster pointing to non-existent clusters
+  var deadSeq: seq[Hash] = @[]
+  for sq, cid in table.sequenceToCluster:
+    if not table.clusters.hasKey(cid):
+      deadSeq.add(sq)
+  for sq in deadSeq:
+    table.sequenceToCluster.del(sq)
+
+  # Also prune recentProbes older than max(windowSeconds, 300)
+  let maxAge = max(table.windowTracker.windowSeconds, 300)
+  var keepProbes: seq[RecentProbe] = @[]
+  for p in table.recentProbes:
+    if p.timestamp.isInitialized:
+      if (currentTime.toTime - p.timestamp.toTime).inSeconds <= maxAge:
+        keepProbes.add(p)
+    else:
+      keepProbes.add(p)
+  table.recentProbes = keepProbes
+
+  result = expiredIds.len
+
+# ==============================================================================
+# Residential Proxy Rotation Detection (Phase 05 / Category B / Item 03)
+# ==============================================================================
+
+proc detectProxyRotation*(
+  table: ActorClusterTable,
+  entry: HttpLogEntry,
+  threat: ThreatProfile,
+  normPath: string,
+  normUa: string
+): bool =
+  ## Inspects recent vulnerability probes to detect residential proxy rotation
+  ## where consecutive probes targeting attack endpoints arrive from distinct IPs within seconds.
+  if entry.clientIp.len == 0 or not entry.timestamp.isInitialized:
+    return false
+  if threat.score < 30 and threat.matchedSignatures.len == 0 and threat.flags.len == 0:
+    return false
+
+  let curTime = entry.timestamp.toTime
+  let threshold = table.proxyRotationThresholdSec
+
+  for p in table.recentProbes:
+    if p.ip != entry.clientIp and p.timestamp.isInitialized:
+      let deltaSec = (curTime - p.timestamp.toTime).inSeconds
+      # Must be within threshold (e.g. 0..10 seconds)
+      if deltaSec >= 0 and deltaSec <= threshold:
+        # Either identical User-Agent, identical normalized path pattern, or both suspicious
+        if (normUa.len > 0 and p.normalizedUa == normUa) or
+           (normPath.len > 0 and p.pathPattern == normPath) or
+           (threat.score >= 50 and p.threatScore >= 50):
+          return true
+  return false
+
+proc isProxyRotating*(cluster: ActorCluster): bool {.inline.} =
+  ## Returns true if residential proxy rotation was detected for this cluster.
+  cluster.proxyRotationDetected
+
+# ==============================================================================
+# Multi-IP Probe Sequence Correlation (Phase 05 / Category B / Item 02)
+# ==============================================================================
+
+proc correlateRecord*(
+  table: ActorClusterTable,
+  entry: HttpLogEntry,
+  threat: ThreatProfile,
+  acceptHeader: string = ""
+): Option[string] =
+  ## Correlates an incoming HTTP log entry with existing multi-IP actor clusters.
+  ## Synthesizes behavioral fingerprints, probe sequences, sliding window recency,
+  ## and residential proxy rotation heuristics (Items 01, 02, 03, 04).
+  ## Returns some(clusterId) if matched or clustered, or none(string) if benign/unmatched.
+
+  # 1. Automatic periodic pruning check
+  inc table.processedCount
+  if table.processedCount >= table.pruneInterval and entry.timestamp.isInitialized:
+    table.processedCount = 0
+    discard table.pruneExpired(entry.timestamp)
+
+  # 2. Only correlate suspicious or malicious actors
+  if threat.category notin {CategorySuspicious, CategoryBadActorHacker} and threat.score < 21:
+    return none(string)
+
+  let normUa = normalizeUserAgent(entry.userAgent)
+  let normPath = normalizePathPattern(entry.path)
+  let fp = generateProbeFingerprint(entry, threat, acceptHeader)
+
+  # 3. Update IP probe sequence tracker
+  if not table.ipSequences.hasKey(entry.clientIp):
+    table.ipSequences[entry.clientIp] = initProbeSequenceTracker(maxHistory = 30)
+  table.ipSequences[entry.clientIp].addPath(entry.path)
+  let seqHash = table.ipSequences[entry.clientIp].sequenceHash()
+
+  # 4. Check for residential proxy rotation
+  let proxyRotating = table.detectProxyRotation(entry, threat, normPath, normUa)
+
+  # 5. Search for existing matching active cluster
+  var matchedClusterId = ""
+
+  # (a) Check if this IP is already mapped to an active cluster
+  if table.ipToCluster.hasKey(entry.clientIp):
+    let cid = table.ipToCluster[entry.clientIp]
+    if table.clusters.hasKey(cid) and not table.windowTracker.isExpired(table.clusters[cid].lastSeen, entry.timestamp):
+      matchedClusterId = cid
+
+  # (b) Check if this exact probe fingerprint has been observed recently
+  if matchedClusterId.len == 0 and table.fingerprintToCluster.hasKey(fp):
+    let cid = table.fingerprintToCluster[fp]
+    if table.clusters.hasKey(cid) and not table.windowTracker.isExpired(table.clusters[cid].lastSeen, entry.timestamp):
+      matchedClusterId = cid
+
+  # (c) Check if identical attack sequence was executed by another IP within window
+  if matchedClusterId.len == 0 and table.sequenceToCluster.hasKey(seqHash):
+    let cid = table.sequenceToCluster[seqHash]
+    if table.clusters.hasKey(cid) and not table.windowTracker.isExpired(table.clusters[cid].lastSeen, entry.timestamp):
+      matchedClusterId = cid
+
+  # (d) If proxy rotation detected within seconds, correlate with the most recent matching probe's cluster
+  if matchedClusterId.len == 0 and proxyRotating and table.recentProbes.len > 0:
+    for i in countdown(table.recentProbes.len - 1, 0):
+      let p = table.recentProbes[i]
+      if p.ip != entry.clientIp and table.ipToCluster.hasKey(p.ip):
+        let cid = table.ipToCluster[p.ip]
+        if table.clusters.hasKey(cid) and not table.windowTracker.isExpired(table.clusters[cid].lastSeen, entry.timestamp):
+          matchedClusterId = cid
+          break
+
+  # (e) Jaccard similarity fallback: check active clusters with identical/similar UA
+  if matchedClusterId.len == 0 and normUa.len > 0:
+    for cid, cl in table.clusters:
+      if not table.windowTracker.isExpired(cl.lastSeen, entry.timestamp):
+        if normalizeUserAgent(cl.primaryUa) == normUa and cl.probedPaths.len > 0:
+          if isPathSimilarityAbove(cl.probedPaths, @[entry.path], 0.50):
+            matchedClusterId = cid
+            break
+
+  # Record this probe in the recent probes buffer for rotation tracking
+  table.recentProbes.add(RecentProbe(
+    ip: entry.clientIp,
+    timestamp: entry.timestamp,
+    pathPattern: normPath,
+    normalizedUa: normUa,
+    threatScore: threat.score
+  ))
+  # Bound recentProbes buffer to 100 items
+  if table.recentProbes.len > 100:
+    table.recentProbes.delete(0)
+
+  # 6. Apply correlation update or cluster creation
+  if matchedClusterId.len > 0 and table.clusters.hasKey(matchedClusterId):
+    let cluster = table.clusters[matchedClusterId]
+    cluster.addEntry(entry, threat.score, threat.category, threat.flags)
+    if proxyRotating:
+      cluster.proxyRotationDetected = true
+      inc cluster.proxyRotationCount
+    table.ipToCluster[entry.clientIp] = matchedClusterId
+    table.fingerprintToCluster[fp] = matchedClusterId
+    table.sequenceToCluster[seqHash] = matchedClusterId
+    return some(matchedClusterId)
+
+  # 7. Create new cluster
+  inc table.clusterCounter
+  let baseHex = toHex(cast[uint64](fp), 8).substr(0, 3).toUpperAscii()
+  let newId = "ACTOR-" & baseHex & align(toHex(table.clusterCounter, 2).toUpperAscii(), 2, '0')
+  var ipSet = initHashSet[string]()
+  ipSet.incl(entry.clientIp)
+
+  let newCluster = newActorCluster(
+    clusterId = newId,
+    primaryUa = entry.userAgent,
+    ips = ipSet,
+    entries = @[entry],
+    totalRequests = 1,
+    status404Count = if entry.statusCode == 404: 1 else: 0,
+    firstSeen = entry.timestamp,
+    lastSeen = entry.timestamp,
+    highestThreatScore = threat.score,
+    aggregateRisk = threat.score,
+    category = threat.category,
+    flags = threat.flags,
+    probedPaths = (if entry.path.len > 0: @[entry.path] else: @[]),
+    proxyRotationDetected = proxyRotating,
+    proxyRotationCount = (if proxyRotating: 1 else: 0)
+  )
+
+  table.clusters[newId] = newCluster
+  table.ipToCluster[entry.clientIp] = newId
+  table.fingerprintToCluster[fp] = newId
+  table.sequenceToCluster[seqHash] = newId
+
+  return some(newId)
+
+# ==============================================================================
+# Cluster Risk Metrics & Posture Calculation (Phase 05 / Category B / Item 05)
+# ==============================================================================
+
+proc attackDuration*(cluster: ActorCluster): Duration =
+  ## Calculates the time span between firstSeen and lastSeen for the cluster.
+  if cluster.firstSeen.isInitialized and cluster.lastSeen.isInitialized and cluster.lastSeen >= cluster.firstSeen:
+    cluster.lastSeen - cluster.firstSeen
+  else:
+    initDuration()
+
+proc attackDurationSeconds*(cluster: ActorCluster): int64 =
+  ## Returns the attack duration in integer seconds.
+  cluster.attackDuration.inSeconds
+
+proc affectedTargets*(cluster: ActorCluster): int =
+  ## Returns the number of distinct target paths probed by this actor cluster.
+  cluster.probedPaths.len
+
+func formatDuration*(d: Duration): string =
+  ## Formats a Duration into a human-readable string (e.g. "02m 15s", "01h 10m 05s", "45s").
+  let totalSec = d.inSeconds
+  if totalSec < 0:
+    return "0s"
+  let hours = totalSec div 3600
+  let minutes = (totalSec mod 3600) div 60
+  let seconds = totalSec mod 60
+  if hours > 0:
+    result = align($hours, 2, '0') & "h " & align($minutes, 2, '0') & "m " & align($seconds, 2, '0') & "s"
+  elif minutes > 0:
+    result = align($minutes, 2, '0') & "m " & align($seconds, 2, '0') & "s"
+  else:
+    result = $seconds & "s"
+
+proc calculateClusterMetrics*(cluster: ActorCluster): ClusterRiskMetrics =
+  ## Calculates multi-dimensional cluster risk metrics including request velocity,
+  ## distributed IP fleet size, targeted endpoint diversity, and proxy rotation (Item 05).
+  let dur = cluster.attackDuration
+  let durSec = dur.inSeconds
+  let uIps = cluster.ips.len
+  let targets = cluster.probedPaths.len
+  let ratio404 = if cluster.totalRequests > 0: cluster.status404Count.float / cluster.totalRequests.float else: 0.0
+
+  # Composite risk calculation
+  var risk = cluster.highestThreatScore
+
+  # Multi-IP distributed penalty
+  if uIps >= 2: risk += 10
+  if uIps >= 5: risk += 10
+  if uIps >= 10: risk += 10
+
+  # Proxy rotation penalty
+  if cluster.proxyRotationDetected:
+    risk += 15
+
+  # Endpoint targeting diversity
+  if targets >= 3: risk += 5
+  if targets >= 7: risk += 10
+
+  # 404 heavy fuzzing penalty
+  if ratio404 >= 0.70 and cluster.totalRequests >= 5:
+    risk += 10
+
+  risk = max(0, min(100, risk))
+
+  let sev =
+    if risk >= 80: "Critical"
+    elif risk >= 50: "High"
+    elif risk >= 25: "Medium"
+    else: "Low"
+
+  ClusterRiskMetrics(
+    clusterId: cluster.clusterId,
+    totalRequests: cluster.totalRequests,
+    uniqueIps: uIps,
+    affectedTargets: targets,
+    attackDuration: dur,
+    attackDurationSeconds: durSec,
+    highestThreatScore: cluster.highestThreatScore,
+    aggregateRisk: risk,
+    status404Count: cluster.status404Count,
+    status404Ratio: ratio404,
+    proxyRotationDetected: cluster.proxyRotationDetected,
+    severity: sev
+  )
+
+proc `$`*(metrics: ClusterRiskMetrics): string =
+  ## Canonical stringifier for ClusterRiskMetrics.
+  "ClusterRiskMetrics(id: " & metrics.clusterId &
+    ", IPs: " & $metrics.uniqueIps &
+    ", Req: " & $metrics.totalRequests &
+    ", Targets: " & $metrics.affectedTargets &
+    ", Duration: " & formatDuration(metrics.attackDuration) &
+    ", Risk: " & $metrics.aggregateRisk & " [" & metrics.severity & "]" &
+    (if metrics.proxyRotationDetected: ", ProxyRotation: true" else: "") & ")"
+
+proc `%`*(metrics: ClusterRiskMetrics): JsonNode =
+  ## Serializes ClusterRiskMetrics into a JSON node.
+  %*{
+    "clusterId": metrics.clusterId,
+    "totalRequests": metrics.totalRequests,
+    "uniqueIps": metrics.uniqueIps,
+    "affectedTargets": metrics.affectedTargets,
+    "attackDurationSeconds": metrics.attackDurationSeconds,
+    "attackDurationFormatted": formatDuration(metrics.attackDuration),
+    "highestThreatScore": metrics.highestThreatScore,
+    "aggregateRisk": metrics.aggregateRisk,
+    "status404Count": metrics.status404Count,
+    "status404Ratio": metrics.status404Ratio,
+    "proxyRotationDetected": metrics.proxyRotationDetected,
+    "severity": metrics.severity
+  }

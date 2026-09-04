@@ -1,0 +1,13 @@
+{"version":3,"term":{"cols":120,"rows":42},"timestamp":1788482120,"command":"/tmp/multi_ip_probe_correlation","title":"Multi-IP Probe Sequence Correlation & Distributed Botnet Detection","env":{"SHELL":"/usr/bin/zsh"}}
+[0.002, "o", "=== http_logviewer: Multi-IP Probe Sequence Correlation (Phase 05 / Category B) ===\r\n\r\n[1] Sliding Time Window Tracker (Item 01):\r\n  Correlation Window:        30.0 minutes (1800 seconds)\r\n"]
+[0.000, "o", "  Probe @ 02:18:00 within 30m window: true\r\n  Probe @ 02:45:00 expired (>30m):     true\r\n\r\n[2] ActorClusterTable Dynamic Registry (Item 04):\r\n"]
+[0.000, "o", "  Initialized ActorClusterTable (active clusters: 0, mapped IPs: 0)\r\n\r\n[3] Simulating 5-Node Distributed Botnet Fleet (Items 02, 03 & 06):\r\n"]
+[0.000, "o", "  [INCOMING] IP: 185.220.101.5    | Target: /.env            -> Correlated Cluster: [ACTOR-5B8801]\r\n"]
+[0.000, "o", "  [INCOMING] IP: 45.154.255.12    | Target: /.env            -> Correlated Cluster: [ACTOR-5B8801]\r\n"]
+[0.000, "o", "  [INCOMING] IP: 194.26.29.40     | Target: /wp-login.php    -> Correlated Cluster: [ACTOR-5B8801]\r\n  [INCOMING] IP: 91.240.118.82    | Target: /xmlrpc.php      -> Correlated Cluster: [ACTOR-5B8801]\r\n"]
+[0.000, "o", "  [INCOMING] IP: 103.21.244.2     | Target: /actuator/env    -> Correlated Cluster: [ACTOR-5B8801]\r\n\r\n  -> Unified Correlation Result: SUCCESS: All 5 IPs unified under [ACTOR-5B8801]\r\n\r\n[4] Residential Proxy Rotation Telemetry (Item 03):\r\n  Proxy Rotation Detected:   true\r\n  Consecutive Rotations:     4\r\n  Unique IPs in Cluster:     5\r\n\r\n[5] Cluster Risk Metrics & Posture Calculation (Item 05):\r\n  Cluster ID:                ACTOR-5B8801\r\n  Total Requests:            5\r\n"]
+[0.000, "o", "  Unique IPs:                5\r\n  Affected Targets:          4\r\n"]
+[0.000, "o", "  Attack Duration:           8s (8s)\r\n"]
+[0.000, "o", "  404 Error Count & Ratio:   5 (100.0%)\r\n  Composite Risk Score:      100 / 100\r\n  Threat Severity Level:     Critical\r\n\r\n  Serialized Metrics JSON:\r\n  {\"clusterId\":\"ACTOR-5B8801\",\"totalRequests\":5,\"uniqueIps\":5,\"affectedTargets\":4,\"attackDurationSeconds\":8,\"attackDurationFormatted\":\"8s\",\"highestThreatScore\":85,\"aggregateRisk\":100,\"status404Count\":5,\"status404Ratio\":1.0,\"proxyRotationDetected\":true,\"severity\":\"Critical\"}\r\n\r\n[6] Sliding Window Cluster Pruning (Item 01):\r\n"]
+[0.000, "o", "  Active Clusters Before Prune: 1\r\n  Pruned Expired Clusters @ 03:00:00: 1\r\n  Active Clusters After Prune:  0\r\n\r\n=== Category B Execution Completed Successfully ===\r\n"]
+[0.000, "x", "0"]

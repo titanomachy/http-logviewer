@@ -1,9 +1,11 @@
 ## Unit tests for Multi-IP Actor Grouping and Correlation Engine.
-## Tests Phase 05 / Category A: Actor Fingerprint Synthesis (Items 01 through 06).
+## Tests Phase 05 / Category A & Category B: Actor Fingerprints & Probe Sequence Correlation.
 
-import std/[unittest, strutils, times, options, json, sets, tables, hashes]
+import std/[unittest, strutils, times, options, json, sets, tables, hashes, os]
 import http_logviewer/core/types
 import http_logviewer/analyzer/correlator
+import http_logviewer/analyzer/classifier
+import http_logviewer/parser/formats
 
 suite "Actor Fingerprint Synthesis - User-Agent, Signature & Accept Header (Phase 05 / Category A / Item 01)":
   test "Item 01: normalizeUserAgent normalizes whitespace and casing":
@@ -303,6 +305,356 @@ suite "Actor Fingerprint Synthesis - Multi-IP Validation (Phase 05 / Category A 
     let fpHuman = generateActorFingerprint(humanEntry, humanThreat)
     check fpHacker.rawHash != fpHuman.rawHash
     check fingerprintSimilarity(fpHacker, fpHuman) < 0.20
+
+suite "Sliding Time Window Tracker (Phase 05 / Category B / Item 01)":
+  test "Item 01: initSlidingWindowTracker configures custom and default windows":
+    let trackerDefault = initSlidingWindowTracker()
+    check trackerDefault.windowSeconds == 1800
+    check trackerDefault.windowMinutes == 30.0
+    check trackerDefault.windowDuration.inSeconds == 1800
+
+    let tracker5m = initSlidingWindowTracker(300)
+    check tracker5m.windowSeconds == 300
+    check tracker5m.windowMinutes == 5.0
+    check tracker5m.windowDuration.inSeconds == 300
+
+    let tracker60m = initSlidingWindowTracker(3600)
+    check tracker60m.windowSeconds == 3600
+    check tracker60m.windowMinutes == 60.0
+
+  test "Item 01: isWithinWindow evaluates temporal proximity":
+    let tracker = initSlidingWindowTracker(1800)
+    let t0 = parse("2026-09-04T02:00:00+02:00", "yyyy-MM-dd'T'HH:mm:sszzz")
+    let t10m = parse("2026-09-04T02:10:00+02:00", "yyyy-MM-dd'T'HH:mm:sszzz")
+    let t40m = parse("2026-09-04T02:40:00+02:00", "yyyy-MM-dd'T'HH:mm:sszzz")
+
+    check tracker.isWithinWindow(t0, t10m)
+    check not tracker.isWithinWindow(t0, t40m)
+
+  test "Item 01: isExpired identifies stale clusters against currentTime":
+    let tracker = initSlidingWindowTracker(1800)
+    let lastSeen = parse("2026-09-04T02:00:00+02:00", "yyyy-MM-dd'T'HH:mm:sszzz")
+    let curActive = parse("2026-09-04T02:25:00+02:00", "yyyy-MM-dd'T'HH:mm:sszzz")
+    let curExpired = parse("2026-09-04T02:35:00+02:00", "yyyy-MM-dd'T'HH:mm:sszzz")
+
+    check not tracker.isExpired(lastSeen, curActive)
+    check tracker.isExpired(lastSeen, curExpired)
+
+  test "Item 01: pruneExpired purges stale clusters and maps":
+    let table = newActorClusterTable(windowSeconds = 600)
+    let t0 = parse("2026-09-04T02:00:00+02:00", "yyyy-MM-dd'T'HH:mm:sszzz")
+    let t5m = parse("2026-09-04T02:05:00+02:00", "yyyy-MM-dd'T'HH:mm:sszzz")
+    let t20m = parse("2026-09-04T02:20:00+02:00", "yyyy-MM-dd'T'HH:mm:sszzz")
+
+    let entryOld = initHttpLogEntry(clientIp = "192.0.2.1", path = "/.env", timestamp = t0, userAgent = "OldBot")
+    let entryRecent = initHttpLogEntry(clientIp = "198.51.100.1", path = "/backup.sql", timestamp = t5m, userAgent = "RecentBot")
+    let threatOld = initThreatProfile(score = 80, category = CategoryBadActorHacker, matchedSignatures = @["SensitiveFile:DotEnv"])
+    let threatRecent = initThreatProfile(score = 80, category = CategoryBadActorHacker, matchedSignatures = @["SensitiveFile:Database"])
+
+    let cidOld = table.correlateRecord(entryOld, threatOld)
+    let cidRecent = table.correlateRecord(entryRecent, threatRecent)
+    check cidOld.isSome
+    check cidRecent.isSome
+    check table.len == 2
+
+    let pruned = table.pruneExpired(t20m)
+    check pruned == 2
+    check table.len == 0
+    check not table.hasClusterForIp("192.0.2.1")
+    check not table.hasClusterForIp("198.51.100.1")
+
+suite "Multi-IP Probe Sequence Correlation (Phase 05 / Category B / Item 02)":
+  test "Item 02: Disparate IPs executing identical attack sequence correlate into single cluster":
+    let table = newActorClusterTable(windowSeconds = 1800)
+    let t0 = parse("2026-09-04T02:00:00+02:00", "yyyy-MM-dd'T'HH:mm:sszzz")
+    let t1 = parse("2026-09-04T02:02:00+02:00", "yyyy-MM-dd'T'HH:mm:sszzz")
+    let t2 = parse("2026-09-04T02:04:00+02:00", "yyyy-MM-dd'T'HH:mm:sszzz")
+
+    let threats = [
+      initThreatProfile(score = 80, category = CategoryBadActorHacker, matchedSignatures = @["SensitiveFile:DotEnv"]),
+      initThreatProfile(score = 75, category = CategoryBadActorHacker, matchedSignatures = @["CmsExploit:WpLogin"])
+    ]
+
+    let n1_1 = initHttpLogEntry(clientIp = "198.51.100.1", path = "/.env", timestamp = t0, userAgent = "Dist-Bot/1.0")
+    let n1_2 = initHttpLogEntry(clientIp = "198.51.100.1", path = "/wp-login.php", timestamp = t0, userAgent = "Dist-Bot/1.0")
+    let cid1 = table.correlateRecord(n1_1, threats[0])
+    discard table.correlateRecord(n1_2, threats[1])
+
+    let n2_1 = initHttpLogEntry(clientIp = "203.0.113.88", path = "/.env", timestamp = t1, userAgent = "Dist-Bot/1.0")
+    let n2_2 = initHttpLogEntry(clientIp = "203.0.113.88", path = "/wp-login.php", timestamp = t1, userAgent = "Dist-Bot/1.0")
+    let cid2 = table.correlateRecord(n2_1, threats[0])
+    discard table.correlateRecord(n2_2, threats[1])
+
+    let n3_1 = initHttpLogEntry(clientIp = "192.0.2.44", path = "/.env", timestamp = t2, userAgent = "Dist-Bot/1.0")
+    let n3_2 = initHttpLogEntry(clientIp = "192.0.2.44", path = "/wp-login.php", timestamp = t2, userAgent = "Dist-Bot/1.0")
+    let cid3 = table.correlateRecord(n3_1, threats[0])
+    discard table.correlateRecord(n3_2, threats[1])
+
+    check cid1.isSome
+    check cid2.isSome
+    check cid3.isSome
+    check cid1.get() == cid2.get()
+    check cid2.get() == cid3.get()
+
+    let cluster = table.getCluster(cid1.get()).get()
+    check cluster.ips.len == 3
+    check cluster.totalRequests == 6
+    check cluster.ips.contains("198.51.100.1")
+    check cluster.ips.contains("203.0.113.88")
+    check cluster.ips.contains("192.0.2.44")
+
+  test "Item 02: Late probe arriving outside correlation window creates new cluster":
+    let table = newActorClusterTable(windowSeconds = 600)
+    let t0 = parse("2026-09-04T02:00:00+02:00", "yyyy-MM-dd'T'HH:mm:sszzz")
+    let tLate = parse("2026-09-04T05:00:00+02:00", "yyyy-MM-dd'T'HH:mm:sszzz")
+    let threat = initThreatProfile(score = 80, category = CategoryBadActorHacker)
+
+    let entry1 = initHttpLogEntry(clientIp = "1.1.1.1", path = "/.env", timestamp = t0, userAgent = "Bot/1.0")
+    let cid1 = table.correlateRecord(entry1, threat)
+
+    let entry2 = initHttpLogEntry(clientIp = "2.2.2.2", path = "/.env", timestamp = tLate, userAgent = "Bot/1.0")
+    let cid2 = table.correlateRecord(entry2, threat)
+
+    check cid1.isSome
+    check cid2.isSome
+    check cid1.get() != cid2.get()
+
+suite "Residential Proxy Rotation Detection (Phase 05 / Category B / Item 03)":
+  test "Item 03: Consecutive probes from distinct IPs within threshold flag proxy rotation":
+    let table = newActorClusterTable(windowSeconds = 1800, proxyRotationThresholdSec = 10)
+    let t0 = parse("2026-09-04T02:00:00+02:00", "yyyy-MM-dd'T'HH:mm:sszzz")
+    let t1 = parse("2026-09-04T02:00:02+02:00", "yyyy-MM-dd'T'HH:mm:sszzz")
+    let threat = initThreatProfile(score = 85, category = CategoryBadActorHacker, matchedSignatures = @["SensitiveFile:DotEnv"])
+
+    let entryA = initHttpLogEntry(clientIp = "185.220.101.5", path = "/.env", timestamp = t0, userAgent = "ProxyBot/2.0")
+    let entryB = initHttpLogEntry(clientIp = "45.154.255.12", path = "/.env", timestamp = t1, userAgent = "ProxyBot/2.0")
+
+    let cidA = table.correlateRecord(entryA, threat)
+    let cidB = table.correlateRecord(entryB, threat)
+
+    check cidA.isSome
+    check cidB.isSome
+    check cidA.get() == cidB.get()
+
+    let cluster = table.getCluster(cidA.get()).get()
+    check cluster.proxyRotationDetected
+    check cluster.isProxyRotating
+    check cluster.proxyRotationCount >= 1
+
+  test "Item 03: Probes from SAME IP do not trigger proxy rotation":
+    let table = newActorClusterTable(windowSeconds = 1800, proxyRotationThresholdSec = 10)
+    let t0 = parse("2026-09-04T02:00:00+02:00", "yyyy-MM-dd'T'HH:mm:sszzz")
+    let t1 = parse("2026-09-04T02:00:02+02:00", "yyyy-MM-dd'T'HH:mm:sszzz")
+    let threat = initThreatProfile(score = 85, category = CategoryBadActorHacker)
+
+    let entryA = initHttpLogEntry(clientIp = "185.220.101.5", path = "/.env", timestamp = t0, userAgent = "SingleIpBot")
+    let entryB = initHttpLogEntry(clientIp = "185.220.101.5", path = "/wp-login.php", timestamp = t1, userAgent = "SingleIpBot")
+
+    let cidA = table.correlateRecord(entryA, threat)
+    let cidB = table.correlateRecord(entryB, threat)
+
+    let cluster = table.getCluster(cidA.get()).get()
+    check not cluster.proxyRotationDetected
+    check cluster.proxyRotationCount == 0
+
+  test "Item 03: Probes from distinct IPs spaced far apart do not flag rotation":
+    let table = newActorClusterTable(windowSeconds = 1800, proxyRotationThresholdSec = 10)
+    let t0 = parse("2026-09-04T02:00:00+02:00", "yyyy-MM-dd'T'HH:mm:sszzz")
+    let t60s = parse("2026-09-04T02:01:00+02:00", "yyyy-MM-dd'T'HH:mm:sszzz")
+    let threat = initThreatProfile(score = 85, category = CategoryBadActorHacker)
+
+    let entryA = initHttpLogEntry(clientIp = "10.0.0.1", path = "/.env", timestamp = t0, userAgent = "SlowBotA")
+    let entryB = initHttpLogEntry(clientIp = "10.0.0.2", path = "/setup.php", timestamp = t60s, userAgent = "SlowBotB")
+
+    discard table.correlateRecord(entryA, threat)
+    let cidB = table.correlateRecord(entryB, threat)
+
+    let clusterB = table.getCluster(cidB.get()).get()
+    check not clusterB.proxyRotationDetected
+
+suite "ActorClusterTable Dynamic IP Linking (Phase 05 / Category B / Item 04)":
+  test "Item 04: linkIp and query methods manage dynamic mappings":
+    let table = newActorClusterTable()
+    let cluster = newActorCluster(clusterId = "ACTOR-TEST1", primaryUa = "TestUA")
+    table.clusters["ACTOR-TEST1"] = cluster
+
+    table.linkIp("192.168.1.50", cluster)
+    table.linkIp("192.168.1.51", cluster)
+
+    check table.hasClusterForIp("192.168.1.50")
+    check table.hasClusterForIp("192.168.1.51")
+    check not table.hasClusterForIp("192.168.1.99")
+
+    let found = table.getClusterForIp("192.168.1.50")
+    check found.isSome
+    check found.get().clusterId == "ACTOR-TEST1"
+    check found.get().ips.len == 2
+    check table.ipCount == 2
+    check table.len == 1
+
+  test "Item 04: deleteCluster and clear clean up all auxiliary indexes":
+    let table = newActorClusterTable()
+    let c1 = newActorCluster(clusterId = "ACTOR-1")
+    let c2 = newActorCluster(clusterId = "ACTOR-2")
+    table.clusters["ACTOR-1"] = c1
+    table.clusters["ACTOR-2"] = c2
+    table.linkIp("1.1.1.1", c1)
+    table.linkIp("2.2.2.2", c2)
+
+    check table.len == 2
+    check table.ipCount == 2
+
+    table.deleteCluster("ACTOR-1")
+    check table.len == 1
+    check not table.hasClusterForIp("1.1.1.1")
+    check table.hasClusterForIp("2.2.2.2")
+
+    table.clear()
+    check table.len == 0
+    check table.ipCount == 0
+
+suite "Cluster Risk Metrics Calculation (Phase 05 / Category B / Item 05)":
+  test "Item 05: calculateClusterMetrics accurately computes risk posture":
+    let tFirst = parse("2026-09-04T02:00:00+02:00", "yyyy-MM-dd'T'HH:mm:sszzz")
+    let tLast = parse("2026-09-04T02:15:30+02:00", "yyyy-MM-dd'T'HH:mm:sszzz")
+
+    var ipSet = initHashSet[string]()
+    ipSet.incl("1.1.1.1")
+    ipSet.incl("2.2.2.2")
+    ipSet.incl("3.3.3.3")
+
+    let cluster = newActorCluster(
+      clusterId = "ACTOR-METRIC1",
+      primaryUa = "AttackerBot/1.0",
+      ips = ipSet,
+      totalRequests = 10,
+      status404Count = 8,
+      firstSeen = tFirst,
+      lastSeen = tLast,
+      highestThreatScore = 75,
+      probedPaths = @["/.env", "/wp-login.php", "/xmlrpc.php"],
+      proxyRotationDetected = true
+    )
+
+    let metrics = calculateClusterMetrics(cluster)
+    check metrics.clusterId == "ACTOR-METRIC1"
+    check metrics.totalRequests == 10
+    check metrics.uniqueIps == 3
+    check metrics.affectedTargets == 3
+    check metrics.attackDurationSeconds == 930
+    check metrics.status404Count == 8
+    check abs(metrics.status404Ratio - 0.80) < 0.001
+    check metrics.proxyRotationDetected
+    check metrics.aggregateRisk == 100
+    check metrics.severity == "Critical"
+
+  test "Item 05: formatDuration formats time spans correctly":
+    check formatDuration(initDuration(seconds = 45)) == "45s"
+    check formatDuration(initDuration(minutes = 2, seconds = 15)) == "02m 15s"
+    check formatDuration(initDuration(hours = 1, minutes = 10, seconds = 5)) == "01h 10m 05s"
+
+  test "Item 05: ClusterRiskMetrics serializes to valid JSON and string representation":
+    let metrics = ClusterRiskMetrics(
+      clusterId: "ACTOR-JSON1",
+      totalRequests: 5,
+      uniqueIps: 2,
+      affectedTargets: 3,
+      attackDuration: initDuration(minutes = 10),
+      attackDurationSeconds: 600,
+      highestThreatScore: 60,
+      aggregateRisk: 75,
+      status404Count: 4,
+      status404Ratio: 0.8,
+      proxyRotationDetected: true,
+      severity: "High"
+    )
+    let jsonNode = %metrics
+    check jsonNode["clusterId"].getStr() == "ACTOR-JSON1"
+    check jsonNode["totalRequests"].getInt() == 5
+    check jsonNode["uniqueIps"].getInt() == 2
+    check jsonNode["severity"].getStr() == "High"
+    check ($metrics).contains("ACTOR-JSON1")
+    check ($metrics).contains("ProxyRotation: true")
+
+suite "5-Node Distributed Botnet Integration Test (Phase 05 / Category B / Item 06)":
+  test "Item 06: Simulating a 5-node distributed botnet scanning an application":
+    let table = newActorClusterTable(windowSeconds = 1800, proxyRotationThresholdSec = 10)
+
+    let botnetNodes = [
+      ("185.220.101.5",  "/.env",           parse("2026-09-04T02:10:01+02:00", "yyyy-MM-dd'T'HH:mm:sszzz")),
+      ("45.154.255.12",  "/.env",           parse("2026-09-04T02:10:03+02:00", "yyyy-MM-dd'T'HH:mm:sszzz")),
+      ("194.26.29.40",   "/wp-login.php",   parse("2026-09-04T02:10:05+02:00", "yyyy-MM-dd'T'HH:mm:sszzz")),
+      ("91.240.118.82",  "/xmlrpc.php",     parse("2026-09-04T02:10:07+02:00", "yyyy-MM-dd'T'HH:mm:sszzz")),
+      ("103.21.244.2",   "/actuator/env",   parse("2026-09-04T02:10:09+02:00", "yyyy-MM-dd'T'HH:mm:sszzz"))
+    ]
+
+    var clusterIds: seq[string] = @[]
+    for (ip, targetPath, ts) in botnetNodes:
+      let entry = initHttpLogEntry(
+        clientIp = ip,
+        timestamp = ts,
+        path = targetPath,
+        `method` = HttpGet,
+        statusCode = 404,
+        userAgent = "WP-Scan-Distributed/3.1 (Botnet-Fleet)"
+      )
+      let threat = evaluateThreat(entry)
+      let cid = table.correlateRecord(entry, threat)
+      check cid.isSome
+      clusterIds.add(cid.get())
+
+    check clusterIds.len == 5
+    for i in 1 ..< clusterIds.len:
+      check clusterIds[i] == clusterIds[0]
+
+    let clusterId = clusterIds[0]
+    let clusterOpt = table.getCluster(clusterId)
+    check clusterOpt.isSome
+    let cluster = clusterOpt.get()
+
+    check cluster.ips.len == 5
+    check cluster.totalRequests == 5
+    check cluster.status404Count == 5
+    check cluster.proxyRotationDetected
+
+    let metrics = calculateClusterMetrics(cluster)
+    check metrics.uniqueIps == 5
+    check metrics.totalRequests == 5
+    check metrics.affectedTargets == 4
+    check metrics.proxyRotationDetected
+    check metrics.severity == "Critical"
+    check metrics.attackDurationSeconds == 8
+
+  test "Item 06: Ingestion of tests/fixtures/distributed_botnet.log fixture verifies cluster grouping":
+    let fixturePath = "tests/fixtures/distributed_botnet.log"
+    check fileExists(fixturePath)
+
+    let table = newActorClusterTable(windowSeconds = 1800, proxyRotationThresholdSec = 10)
+    var lineCount = 0
+    var assignedClusterId = ""
+
+    for rawLine in lines(fixturePath):
+      if rawLine.strip().len == 0: continue
+      inc lineCount
+      let entryOpt = parseCombinedLine(rawLine)
+      check entryOpt.isSome
+      let entry = entryOpt.get()
+      let threat = evaluateThreat(entry)
+      let cidOpt = table.correlateRecord(entry, threat)
+      check cidOpt.isSome
+      if assignedClusterId.len == 0:
+        assignedClusterId = cidOpt.get()
+      else:
+        check cidOpt.get() == assignedClusterId
+
+    check lineCount == 5
+    check table.len == 1
+    let cluster = table.getCluster(assignedClusterId).get()
+    check cluster.ips.len == 5
+    check cluster.proxyRotationDetected
+    let metrics = calculateClusterMetrics(cluster)
+    check metrics.uniqueIps == 5
+    check metrics.severity == "Critical"
 
 
 

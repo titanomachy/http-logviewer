@@ -1,0 +1,5 @@
+185.220.101.5 - - [04/Sep/2026:02:10:01 +0200] "GET /.env HTTP/1.1" 404 162 "-" "WP-Scan-Distributed/3.1 (Botnet-Fleet)"
+45.154.255.12 - - [04/Sep/2026:02:10:03 +0200] "GET /wp-login.php HTTP/1.1" 404 162 "-" "WP-Scan-Distributed/3.1 (Botnet-Fleet)"
+194.26.29.40 - - [04/Sep/2026:02:10:05 +0200] "POST /xmlrpc.php HTTP/1.1" 404 162 "-" "WP-Scan-Distributed/3.1 (Botnet-Fleet)"
+91.240.118.82 - - [04/Sep/2026:02:10:07 +0200] "GET /actuator/env HTTP/1.1" 404 162 "-" "WP-Scan-Distributed/3.1 (Botnet-Fleet)"
+103.21.244.2 - - [04/Sep/2026:02:10:09 +0200] "GET /setup.php HTTP/1.1" 404 162 "-" "WP-Scan-Distributed/3.1 (Botnet-Fleet)"

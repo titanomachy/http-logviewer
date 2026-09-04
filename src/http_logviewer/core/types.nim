@@ -106,6 +106,8 @@ type
     category*: ActorCategory
     flags*: set[ThreatFlag]
     probedPaths*: seq[string]       ## Chronological sample of paths accessed
+    proxyRotationDetected*: bool    ## Detected rapid rotation of distinct IPs (< threshold)
+    proxyRotationCount*: int        ## Number of distinct IP rotations observed in rapid succession
 
   ## Enriched event passed to the presentation layer
   EnrichedLogRecord* = object
@@ -551,7 +553,9 @@ proc newActorCluster*(
   aggregateRisk: int = 0,
   category: ActorCategory = CategoryUnknown,
   flags: set[ThreatFlag] = {},
-  probedPaths: seq[string] = @[]
+  probedPaths: seq[string] = @[],
+  proxyRotationDetected: bool = false,
+  proxyRotationCount: int = 0
 ): ActorCluster =
   ## Allocates and returns a new ActorCluster reference object.
   ActorCluster(
@@ -567,7 +571,9 @@ proc newActorCluster*(
     aggregateRisk: aggregateRisk,
     category: category,
     flags: flags,
-    probedPaths: probedPaths
+    probedPaths: probedPaths,
+    proxyRotationDetected: proxyRotationDetected,
+    proxyRotationCount: proxyRotationCount
   )
 
 proc addEntry*(
@@ -607,9 +613,10 @@ proc `$`*(cluster: ActorCluster): string =
   let ipCount = cluster.ips.len
   let firstStr = if not cluster.firstSeen.isInitialized: "-" else: cluster.firstSeen.format("yyyy-MM-dd'T'HH:mm:sszzz")
   let lastStr = if not cluster.lastSeen.isInitialized: "-" else: cluster.lastSeen.format("yyyy-MM-dd'T'HH:mm:sszzz")
+  let proxyStr = if cluster.proxyRotationDetected: ", ProxyRotation: true" else: ""
   "ActorCluster(" & cluster.clusterId & ", IPs: " & $ipCount & ", Req: " & $cluster.totalRequests &
     ", 404s: " & $cluster.status404Count & ", Category: " & $cluster.category &
-    ", Risk: " & $cluster.aggregateRisk & ", Window: [" & firstStr & " .. " & lastStr & "])"
+    ", Risk: " & $cluster.aggregateRisk & proxyStr & ", Window: [" & firstStr & " .. " & lastStr & "])"
 
 proc `%`*(cluster: ActorCluster): JsonNode =
   ## Serializes ActorCluster to a JSON object node.
@@ -633,7 +640,9 @@ proc `%`*(cluster: ActorCluster): JsonNode =
     "aggregateRisk": cluster.aggregateRisk,
     "category": $cluster.category,
     "flags": %cluster.flags,
-    "probedPaths": pathsArr
+    "probedPaths": pathsArr,
+    "proxyRotationDetected": cluster.proxyRotationDetected,
+    "proxyRotationCount": cluster.proxyRotationCount
   }
 
 # ==============================================================================

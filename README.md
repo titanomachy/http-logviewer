@@ -91,6 +91,7 @@ High-performance HTTP log viewer and rogue bot detector written in Nim. `http_lo
   - [User-Agent Taxonomy & Bot Identification](#11-user-agent-taxonomy--bot-identification)
   - [Behavioral Heuristics & Anomaly Scoring](#12-behavioral-heuristics--anomaly-scoring)
   - [Actor Fingerprint Synthesis & Multi-IP Correlation](#13-actor-fingerprint-synthesis--multi-ip-correlation)
+  - [Multi-IP Probe Sequence Correlation](#14-multi-ip-probe-sequence-correlation)
 - [Examples](#examples)
 - [Development and Documentation](#development-and-documentation)
 - [Attribution and License](#attribution-and-license)
@@ -145,6 +146,8 @@ The library exposes clean, type-safe Nim APIs organized into modular layers:
 | [Attack Signatures & Payloads](#10-attack-signature--payload-detection) | `http_logviewer/analyzer/signatures` | `SensitiveFileSignatures`, `CmsExploitSignatures`, `TraversalPatterns`, `SqlInjectionPatterns`, `CommandInjectionPatterns`, `Log4jJndiPatterns`, `scanAttackSignatures`, `analyzeAttackPayload` | Hostile attack signature databases, multi-pass URL decoding, OWASP Top 10 vectors, sensitive config probes, CMS entrypoints, SQLi, RCE, and Log4Shell detection |
 | [User-Agent Taxonomy](#11-user-agent-taxonomy--bot-identification) | `http_logviewer/analyzer/useragents` | `VerifiedSearchEngineBots`, `CommercialCrawlerBots`, `OffensiveScannerUas`, `GenericHttpLibraries`, `classifyUserAgent`, `detectUserAgentAnomalies`, `UserAgentClassification` | High-accuracy bot identification, verified search engines, commercial SEO crawlers, offensive security scanners, generic HTTP scripting libraries, and User-Agent anomaly detection |
 | [Behavioral Heuristics & Anomaly Scoring](#12-behavioral-heuristics--anomaly-scoring) | `http_logviewer/analyzer/classifier` | `VisitorBehaviorTracker`, `VisitorStats`, `evaluateThreat`, `staticAssetRatio`, `calculate404Velocity`, `evaluateMethodAnomaly`, `scoreToActorCategory` | Heuristic scoring engine (0-100), static asset ratios, 404 velocity, HTTP method anomaly scoring, and intent categorization |
+| [Actor Fingerprint Synthesis](#13-actor-fingerprint-synthesis--multi-ip-correlation) | `http_logviewer/analyzer/correlator` | `ActorFingerprint`, `generateProbeFingerprint`, `generateActorFingerprint`, `normalizePathPattern`, `hashPathSequence`, `normalizeQueryParams`, `jaccardSimilarity`, `extractSessionTokens` | Deterministic behavioral fingerprints, structural path pattern sequences, cache-buster parameter normalization, and Jaccard similarity sets |
+| [Multi-IP Probe Correlation](#14-multi-ip-probe-sequence-correlation) | `http_logviewer/analyzer/correlator` | `ActorClusterTable`, `SlidingWindowTracker`, `RecentProbe`, `ClusterRiskMetrics`, `newActorClusterTable`, `correlateRecord`, `calculateClusterMetrics`, `detectProxyRotation`, `pruneExpired` | In-memory sliding time window tracker (5-60 min), probe sequence correlation, residential proxy rotation detection, dynamic ActorClusterTable registry, and cluster-level risk metrics |
 | Error Hierarchy | `http_logviewer/core/errors` | `HttpLogViewerError`, `ParseError`, `ThreatAnalysisError`, `ConfigError` | Robust exception hierarchy derived from `CatchableError` |
 
 ---
@@ -851,6 +854,49 @@ nim r --path:src examples/actor_fingerprint_synthesis.nim
 
 ---
 
+### 14. Multi-IP Probe Sequence Correlation
+
+Correlates disparate IP addresses executing synchronized attack sequences within a sliding time window (5 to 60 minutes), detects residential proxy rotation, maintains a dynamic `ActorClusterTable` linking IPs to unified actor clusters, and calculates cluster-level risk metrics:
+
+- **Sliding Time Window Tracker (`SlidingWindowTracker`)**: Configurable correlation window (default 1800s / 30 min) maintaining active temporal bounds and automatically pruning expired clusters and secondary indexes via `pruneExpired`.
+- **Probe Sequence Correlation**: Automatically detects when distinct IP addresses execute matching sequences of exploit endpoints (`/.env -> /wp-login.php -> /xmlrpc.php`), unifying them under a shared cluster ID even when requests arrive minutes apart.
+- **Residential Proxy Rotation Detection**: Flags automated residential proxy networks when consecutive vulnerability probes targeting exploit paths arrive from distinct IPs within seconds (<= 10s threshold).
+- **Dynamic Registry (`ActorClusterTable`)**: Fast in-memory lookup table dynamically indexing IP addresses, probe fingerprints, and sequence hashes to `ActorCluster` instances.
+- **Cluster-Level Risk Metrics (`ClusterRiskMetrics`)**: Synthesizes request velocity, distinct IP fleet size, endpoint targeting breadth, attack duration, 404 ratio, and proxy rotation penalties into a composite severity score (`Critical`, `High`, `Medium`, `Low`).
+
+```nim
+import std/times
+import http_logviewer/core/types
+import http_logviewer/analyzer/[correlator, classifier]
+
+let table = newActorClusterTable(windowSeconds = 1800, proxyRotationThresholdSec = 10)
+
+# Simulate two nodes from a rotating botnet targeting the same endpoints
+let entry1 = initHttpLogEntry(clientIp = "185.220.101.5", path = "/.env", timestamp = now().utc, userAgent = "Botnet/2.0")
+let entry2 = initHttpLogEntry(clientIp = "45.154.255.12", path = "/.env", timestamp = now().utc, userAgent = "Botnet/2.0")
+
+let cid1 = table.correlateRecord(entry1, evaluateThreat(entry1))
+let cid2 = table.correlateRecord(entry2, evaluateThreat(entry2))
+
+echo "Correlated under same cluster: ", cid1 == cid2
+let cluster = table.getCluster(cid1.get()).get()
+let metrics = calculateClusterMetrics(cluster)
+echo "Unique IPs: ", metrics.uniqueIps, ", Severity: ", metrics.severity
+```
+
+The recording below demonstrates in-memory sliding time window tracking, dynamic `ActorClusterTable` registration, 5-node distributed botnet fleet correlation, residential proxy rotation detection, cluster risk metrics calculation, and automatic cluster pruning:
+
+![Multi-IP Probe Sequence Correlation](docs/images/multi_ip_probe_correlation.gif)
+
+> *Source session recording:* [`docs/recordings/multi_ip_probe_correlation.cast`](docs/recordings/multi_ip_probe_correlation.cast) *(recorded with Asciinema, rendered via Agg with JetBrainsMono Nerd Font Mono)*.
+
+Compile and run this example:
+```bash
+nim r --path:src examples/multi_ip_probe_correlation.nim
+```
+
+---
+
 ## Examples
 
 The `examples/` folder provides executable demonstrations of each pipeline layer:
@@ -869,6 +915,7 @@ The `examples/` folder provides executable demonstrations of each pipeline layer
 - [`examples/user_agent_taxonomy.nim`](examples/user_agent_taxonomy.nim): User-Agent taxonomy, verified search engines, commercial crawlers, offensive security scanners, generic HTTP libraries, and anomaly detection.
 - [`examples/behavioral_heuristics.nim`](examples/behavioral_heuristics.nim): Behavioral heuristics, static asset ratios, 404 velocity, method anomaly scoring, and composite risk classification.
 - [`examples/actor_fingerprint_synthesis.nim`](examples/actor_fingerprint_synthesis.nim): Actor fingerprint synthesis, User-Agent normalization, path sequence hashing, cache-buster stripping, Jaccard similarity, and multi-IP botnet correlation.
+- [`examples/multi_ip_probe_correlation.nim`](examples/multi_ip_probe_correlation.nim): Multi-IP probe sequence correlation, sliding time window tracking, residential proxy rotation detection, dynamic `ActorClusterTable` linking, and cluster risk metrics.
 - [`examples/pipeline_scaffolding.nim`](examples/pipeline_scaffolding.nim): Cross-module pipeline event envelope demonstration.
 
 ---
