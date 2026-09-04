@@ -89,6 +89,7 @@ High-performance HTTP log viewer and rogue bot detector written in Nim. `http_lo
   - [Bogon, Private, and Loopback IP Handling](#9-bogon-private-and-loopback-ip-handling)
   - [Attack Signature & Payload Detection](#10-attack-signature--payload-detection)
   - [User-Agent Taxonomy & Bot Identification](#11-user-agent-taxonomy--bot-identification)
+  - [Behavioral Heuristics & Anomaly Scoring](#12-behavioral-heuristics--anomaly-scoring)
 - [Examples](#examples)
 - [Development and Documentation](#development-and-documentation)
 - [Attribution and License](#attribution-and-license)
@@ -140,6 +141,9 @@ The library exposes clean, type-safe Nim APIs organized into modular layers:
 | [IP-to-Country Lookup & GeoIP](#7-ip-to-country-lookup--geoip-enrichment) | `http_logviewer/enrichment/geoip`, `http_logviewer/enrichment/flags` | `GeoIpProvider`, `GeoIpEngine`, `MmdbGeoIpProvider`, `CidrGeoIpProvider`, `LruCache`, `isoToFlagEmoji` | High-performance IP geolocation, offline MMDB parser, fallback CIDR database, LRU memory cache, and automatic database discovery |
 | [Unicode Flags & Country Metadata](#8-unicode-regional-indicator-flags--country-metadata) | `http_logviewer/enrichment/flags` | `isoToFlagEmoji`, `getCountryName`, `IsoCountryCodes`, `flagTerminalFallback`, `formatCountryFlag`, `formatCountryBadge` | Algorithmic ISO-3166-1 flag emoji generation, 249 English country names, special pseudo-code mapping (EU, AP, A1, A2, T1), and terminal ASCII fallback |
 | [Bogon & Private IPs](#9-bogon-private-and-loopback-ip-handling) | `http_logviewer/enrichment/bogon` | `isRfc1918Private`, `isLoopbackIp`, `isLinkLocalIp`, `isCgnatIp`, `isUniqueLocalIp`, `isMulticastIp`, `isBogonIp`, `classifyIpSubnet`, `formatLocalTrafficMarker`, `makeEnrichedPrivateLocation` | Subnet classification, RFC 1918 private IPv4 ranges, loopback/localhost, link-local, carrier-grade NAT, multicast, bogon/reserved networks, and local traffic markers (`🏠 Local / Private LAN`) |
+| [Attack Signatures & Payloads](#10-attack-signature--payload-detection) | `http_logviewer/analyzer/signatures` | `SensitiveFileSignatures`, `CmsExploitSignatures`, `TraversalPatterns`, `SqlInjectionPatterns`, `CommandInjectionPatterns`, `Log4jJndiPatterns`, `scanAttackSignatures`, `analyzeAttackPayload` | Hostile attack signature databases, multi-pass URL decoding, OWASP Top 10 vectors, sensitive config probes, CMS entrypoints, SQLi, RCE, and Log4Shell detection |
+| [User-Agent Taxonomy](#11-user-agent-taxonomy--bot-identification) | `http_logviewer/analyzer/useragents` | `VerifiedSearchEngineBots`, `CommercialCrawlerBots`, `OffensiveScannerUas`, `GenericHttpLibraries`, `classifyUserAgent`, `detectUserAgentAnomalies`, `UserAgentClassification` | High-accuracy bot identification, verified search engines, commercial SEO crawlers, offensive security scanners, generic HTTP scripting libraries, and User-Agent anomaly detection |
+| [Behavioral Heuristics & Anomaly Scoring](#12-behavioral-heuristics--anomaly-scoring) | `http_logviewer/analyzer/classifier` | `VisitorBehaviorTracker`, `VisitorStats`, `evaluateThreat`, `staticAssetRatio`, `calculate404Velocity`, `evaluateMethodAnomaly`, `scoreToActorCategory` | Heuristic scoring engine (0-100), static asset ratios, 404 velocity, HTTP method anomaly scoring, and intent categorization |
 | Error Hierarchy | `http_logviewer/core/errors` | `HttpLogViewerError`, `ParseError`, `ThreatAnalysisError`, `ConfigError` | Robust exception hierarchy derived from `CatchableError` |
 
 ---
@@ -724,6 +728,65 @@ nim r --path:src examples/user_agent_taxonomy.nim
 
 ---
 
+### 12. Behavioral Heuristics & Anomaly Scoring
+
+The `http_logviewer/analyzer/classifier` module implements high-resolution heuristic scoring and session tracking, aggregating attack signatures, User-Agent taxonomy, and behavioral telemetry into a normalized **Risk Score (0–100)** and canonical **ActorCategory** (`RealUser`, `VerifiedBot`, `FriendlyCrawler`, `CommercialBot`, `SuspiciousScanner`, `BadActorHacker`):
+
+- **Static Asset Ratio Heuristic**: Measures the proportion of secondary resources (CSS, JS, SVG, images, fonts, media) requested alongside HTML endpoints. Real users rendering pages in a browser generate high static ratios (> 35%), which applies a mitigating score bonus (-10 pts). Automated scrapers and fuzzers probing 5+ endpoints with zero static assets trigger `ThreatNoAssetFetch` (+20 pts).
+- **404 Error Velocity Heuristic**: Distinguishes single accidental broken links (tolerated at <= 5 pts) and benign missing static assets (e.g. `/favicon.ico`, 0 penalty) from aggressive directory fuzzing. Tracks consecutive 404 runs (>= 3 elevated, >= 5 high rate, >= 10 aggressive fuzzing) and short-window error rates, flagging `ThreatHighRate404`.
+- **HTTP Method Anomaly Scoring**: Identifies protocol-level abuse including proxy tunnels (`CONNECT`) and cross-site tracing (`TRACE`) triggering `ThreatMalformedRequest` (+35 pts), non-standard custom verbs (+20 pts), write methods (`POST`, `PUT`, `DELETE`) targeting administrative or exploit paths (`/wp-login.php`, `/.env`) triggering `ThreatCmsExploit` (+35 pts), and missing `Referer` headers on write requests (+10 pts).
+- **Composite Risk Scoring Engine**: Seamlessly integrates payload analysis, User-Agent classification, HTTP status heuristics, method verification, and behavioral history into an integer score bounded strictly to `[0..100]`.
+- **Score to ActorCategory Mapping**: Categorizes visitors deterministically:
+  - **0–20**: `CategoryRealUser` (or `CategoryVerifiedBot` / `CategoryCommercialBot` if legitimate crawler).
+  - **21–49**: `CategorySuspicious` (aliased to `SuspiciousScanner`).
+  - **50–100**: `CategoryBadActorHacker`.
+- **False Positive Mitigation**: Search engines (`Googlebot`, `Bingbot`) browsing legitimately remain at score 0. Legitimate human users across desktop and mobile browsers navigate websites with zero false positives.
+
+```nim
+import http_logviewer/analyzer/classifier
+import http_logviewer/core/types
+
+# 1. Stateless evaluation of a single log entry
+let hostileEntry = initHttpLogEntry(
+  clientIp = "185.220.101.5",
+  path = "/wp-login.php",
+  method = HttpPost,
+  statusCode = 404,
+  userAgent = "sqlmap/1.7.2#stable"
+)
+let profile = evaluateThreat(hostileEntry)
+assert profile.score >= 50
+assert profile.category == CategoryBadActorHacker
+assert ThreatKnownScannerUa in profile.flags
+
+# 2. Stateful visitor session tracking
+let tracker = newVisitorBehaviorTracker()
+let humanIp = "192.0.2.10"
+
+# User requests page followed by static assets
+discard evaluateThreat(initHttpLogEntry(clientIp = humanIp, path = "/", statusCode = 200, userAgent = "Mozilla/5.0"), tracker)
+discard evaluateThreat(initHttpLogEntry(clientIp = humanIp, path = "/style.css", statusCode = 200, userAgent = "Mozilla/5.0"), tracker)
+discard evaluateThreat(initHttpLogEntry(clientIp = humanIp, path = "/bundle.js", statusCode = 200, userAgent = "Mozilla/5.0"), tracker)
+
+let stats = tracker.getStats(humanIp).get()
+assert stats.staticAssetRatio() > 0.60
+```
+
+#### Terminal Demonstration
+
+The recording below demonstrates static asset ratio calculation, 404 error velocity heuristics, HTTP method anomaly scoring, composite threat score aggregation, and intent categorization:
+
+![Behavioral Heuristics and Anomaly Scoring](docs/images/behavioral_heuristics.gif)
+
+> *Source session recording:* [`docs/recordings/behavioral_heuristics.cast`](docs/recordings/behavioral_heuristics.cast) *(recorded with Asciinema, rendered via Agg with JetBrainsMono Nerd Font Mono)*.
+
+Compile and run this example:
+```bash
+nim r --path:src examples/behavioral_heuristics.nim
+```
+
+---
+
 ## Examples
 
 The `examples/` folder provides executable demonstrations of each pipeline layer:
@@ -740,6 +803,7 @@ The `examples/` folder provides executable demonstrations of each pipeline layer
 - [`examples/bogon_and_private_ip.nim`](examples/bogon_and_private_ip.nim): Comprehensive RFC 1918, loopback, link-local, CGNAT, multicast, bogon reserved networks, and local traffic markers.
 - [`examples/attack_signatures_and_payloads.nim`](examples/attack_signatures_and_payloads.nim): Hostile attack signatures, OWASP Top 10 vectors, sensitive file probes, CMS exploits, directory traversal, SQLi, RCE, and Log4j detection.
 - [`examples/user_agent_taxonomy.nim`](examples/user_agent_taxonomy.nim): User-Agent taxonomy, verified search engines, commercial crawlers, offensive security scanners, generic HTTP libraries, and anomaly detection.
+- [`examples/behavioral_heuristics.nim`](examples/behavioral_heuristics.nim): Behavioral heuristics, static asset ratios, 404 velocity, method anomaly scoring, and composite risk classification.
 - [`examples/pipeline_scaffolding.nim`](examples/pipeline_scaffolding.nim): Cross-module pipeline event envelope demonstration.
 
 ---
