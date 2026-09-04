@@ -4,12 +4,12 @@
 import http_logviewer/core/[prelude, types, config]
 import http_logviewer/parser/[engine, formats]
 import http_logviewer/enrichment/[geoip, flags]
-import http_logviewer/analyzer/[classifier, signatures]
+import http_logviewer/analyzer/[classifier, signatures, useragents]
 import http_logviewer/renderer/terminal
 import http_logviewer/cli/args
 import http_logviewer/submodule
 
-export prelude, types, config, engine, formats, geoip, flags, classifier, signatures, terminal, args, submodule
+export prelude, types, config, engine, formats, geoip, flags, classifier, signatures, useragents, terminal, args, submodule
 
 proc runHelloPipeline*(input: string = "pipeline_init"): string =
   ## Runs a minimal end-to-end hello pipeline through all core modules.

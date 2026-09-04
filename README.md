@@ -88,6 +88,7 @@ High-performance HTTP log viewer and rogue bot detector written in Nim. `http_lo
   - [Unicode Regional Indicator Flags & Country Metadata](#8-unicode-regional-indicator-flags--country-metadata)
   - [Bogon, Private, and Loopback IP Handling](#9-bogon-private-and-loopback-ip-handling)
   - [Attack Signature & Payload Detection](#10-attack-signature--payload-detection)
+  - [User-Agent Taxonomy & Bot Identification](#11-user-agent-taxonomy--bot-identification)
 - [Examples](#examples)
 - [Development and Documentation](#development-and-documentation)
 - [Attribution and License](#attribution-and-license)
@@ -663,6 +664,66 @@ nim r --path:src examples/attack_signatures_and_payloads.nim
 
 ---
 
+### 11. User-Agent Taxonomy & Bot Identification
+
+The `http_logviewer/analyzer/useragents` module provides high-accuracy User-Agent analysis, classifying HTTP clients into structured intent categories (`CategoryVerifiedBot`, `CategoryFriendlyCrawler`, `CategoryCommercialBot`, `CategorySuspicious`, `CategoryBadActorHacker`, `CategoryRealUser`):
+
+- **Verified Search Engine Bots**: Recognizes legitimate search engine crawlers (`Googlebot`, `Bingbot`, `DuckDuckBot`, `YandexBot`, `Baiduspider`, `Applebot`, `Sogou`, `Qwantify`, `SeznamBot`) across desktop, mobile, image, video, and ads indexing variants, ensuring zero threat false positives.
+- **Friendly Social & Archival Crawlers**: Detects friendly previewers and digital preservation bots (`Archive.org`, `ia_archiver`, `FacebookExternalHit`, `Twitterbot`, `LinkedInBot`, `Slackbot`, `TelegramBot`).
+- **Commercial & SEO Crawlers**: Identifies commercial SEO, data collection, and auditing crawlers (`AhrefsBot`, `SemrushBot`, `MJ12bot`, `DotBot`, `Screaming Frog SEO Spider`, `ByteSpider`, `PetalBot`, `CriteoBot`, `BLEXBot`, `SEOkicks`, `ZoominfoBot`, `DataForSeoBot`, `SiteAuditBot`, `CCBot`, `MojeekBot`, `TurnitinBot`).
+- **Offensive Scanners & Exploit Tools**: Flags offensive vulnerability scanners, fuzzers, and intrusion tools (`sqlmap`, `nikto`, `masscan`, `zgrab`, `nuclei`, `gobuster`, `dirbuster`, `nmap`, `wpscan`, `havij`, `acunetix`, `nessus`, `qualys`, `openvas`, `arachni`, `hydra`, `medusa`, `ffuf`, `dirb`, `whatweb`, `metasploit`, `commix`, `jaeles`, `wfuzz`, `sublist3r`, `amass`, `censys`, `shodan`), immediately assigning `CategoryBadActorHacker` and `ThreatKnownScannerUa`.
+- **Generic HTTP Libraries**: Identifies automated programming clients (`curl`, `python-requests`, `python-urllib`, `Go-http-client`, `Wget`, `aiohttp`, `httpx`, `libwww-perl`, `PHP`, `PostmanRuntime`, `Apache-HttpClient`, `okhttp`, `Java`, `axios`, `node-fetch`, `got`, `GuzzleHttp`, `Faraday`, `Ruby`), tagging them as `CategorySuspicious` with `ThreatNoAssetFetch`.
+- **User-Agent Anomaly Detection**: Catches evasion tactics including empty User-Agents (`AnomalyEmpty`), single bare words lacking standard structure (`AnomalySingleWord`), forged modern Chrome User-Agents on ancient unsupported Windows versions such as NT 5.x / 4.0 / 98 (`AnomalyFakeChromeOnAncientWindows`), bare browser tokens (`AnomalyMissingBrowserTokens`), raw control characters (`AnomalyNonAsciiOrControlChars`), and embedded exploit vectors like SQLi, shell commands, and Log4j (`AnomalyExploitPayloadInUa`).
+- **End-to-End Classification**: Provides `classifyUserAgent(ua)` returning a rich `UserAgentClassification` record containing category, matched rule name, threat flags, anomaly set, and suggested risk score.
+
+```nim
+import http_logviewer/analyzer/useragents
+import http_logviewer/core/types
+
+# 1. Verified search bots
+let google = classifyUserAgent("Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)")
+assert google.category == CategoryVerifiedBot
+assert google.suggestedThreatScore == 0
+
+# 2. Commercial crawlers
+let ahrefs = classifyUserAgent("Mozilla/5.0 (compatible; AhrefsBot/7.0; +http://ahrefs.com/robot/)")
+assert ahrefs.category == CategoryCommercialBot
+
+# 3. Offensive security scanners
+let sqlmap = classifyUserAgent("sqlmap/1.7.2#stable (https://sqlmap.org)")
+assert sqlmap.category == CategoryBadActorHacker
+assert ThreatKnownScannerUa in sqlmap.flags
+
+# 4. Generic scripting libraries
+let curl = classifyUserAgent("curl/8.4.0")
+assert curl.category == CategorySuspicious
+
+# 5. User-Agent anomalies (forged Chrome on Windows XP)
+let fake = classifyUserAgent("Mozilla/5.0 (Windows NT 5.1) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36")
+assert fake.category == CategoryBadActorHacker
+assert AnomalyFakeChromeOnAncientWindows in fake.anomalies
+
+# 6. Authentic human browser
+let chrome = classifyUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122.0.0.0 Safari/537.36")
+assert chrome.category == CategoryRealUser
+assert chrome.suggestedThreatScore == 0
+```
+
+#### Terminal Demonstration
+
+The recording below demonstrates classification of verified search engine bots, commercial crawlers, offensive security scanners, generic HTTP libraries, and evasive User-Agent anomalies:
+
+![User-Agent Taxonomy and Bot Identification](docs/images/user_agent_taxonomy.gif)
+
+> *Source session recording:* [`docs/recordings/user_agent_taxonomy.cast`](docs/recordings/user_agent_taxonomy.cast) *(recorded with Asciinema, rendered via Agg with JetBrainsMono Nerd Font Mono)*.
+
+Compile and run this example:
+```bash
+nim r --path:src examples/user_agent_taxonomy.nim
+```
+
+---
+
 ## Examples
 
 The `examples/` folder provides executable demonstrations of each pipeline layer:
@@ -678,6 +739,7 @@ The `examples/` folder provides executable demonstrations of each pipeline layer
 - [`examples/flags_and_country_metadata.nim`](examples/flags_and_country_metadata.nim): Algorithmic ISO country flag emojis, 249 country name resolutions, security pseudo-codes, and terminal ASCII fallback.
 - [`examples/bogon_and_private_ip.nim`](examples/bogon_and_private_ip.nim): Comprehensive RFC 1918, loopback, link-local, CGNAT, multicast, bogon reserved networks, and local traffic markers.
 - [`examples/attack_signatures_and_payloads.nim`](examples/attack_signatures_and_payloads.nim): Hostile attack signatures, OWASP Top 10 vectors, sensitive file probes, CMS exploits, directory traversal, SQLi, RCE, and Log4j detection.
+- [`examples/user_agent_taxonomy.nim`](examples/user_agent_taxonomy.nim): User-Agent taxonomy, verified search engines, commercial crawlers, offensive security scanners, generic HTTP libraries, and anomaly detection.
 - [`examples/pipeline_scaffolding.nim`](examples/pipeline_scaffolding.nim): Cross-module pipeline event envelope demonstration.
 
 ---
