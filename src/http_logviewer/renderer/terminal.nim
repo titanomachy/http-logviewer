@@ -52,7 +52,7 @@ proc getEffectiveTerminalWidth*(overrideWidth: int = 0, fallback: int = 120): in
     discard
   fallback
 
-proc shortenPath*(path: string, maxLen: int): string =
+func shortenPath*(path: string, maxLen: int): string =
   ## Shortens a URI path using middle ellipsis truncation to fit within `maxLen`.
   ## Preserves leading slash/root structure and the ending filename/resource.
   if maxLen <= 0 or path.len <= maxLen:
@@ -68,7 +68,7 @@ proc shortenPath*(path: string, maxLen: int): string =
   else:
     path[0 ..< headLen] & "..."
 
-proc truncateText*(text: string, maxLen: int, ellipsis: string = "..."): string =
+func truncateText*(text: string, maxLen: int, ellipsis: string = "..."): string =
   ## Truncates arbitrary text to `maxLen` terminal characters with an ellipsis suffix.
   if maxLen <= 0 or text.len <= maxLen:
     return text
@@ -77,7 +77,7 @@ proc truncateText*(text: string, maxLen: int, ellipsis: string = "..."): string 
     return ellipsis.substr(0, maxLen - 1)
   text[0 ..< (maxLen - ellLen)] & ellipsis
 
-proc truncateAnsi*(s: string, maxVisibleWidth: int, ellipsis: string = "..."): string =
+func truncateAnsi*(s: string, maxVisibleWidth: int, ellipsis: string = "..."): string =
   ## Safely truncates a string containing ANSI escape sequences to `maxVisibleWidth` visual columns.
   ## Preserves internal escape codes without counting them and appends ANSI Reset (`\e[0m`) if truncated.
   let currentWidth = terminalDisplayWidth(s)
@@ -168,7 +168,7 @@ proc renderStreamHeader*(
   else:
     result = line
 
-proc renderStreamSeparator*(width: int = 80, sepChar: char = '-'): string =
+func renderStreamSeparator*(width: int = 80, sepChar: char = '-'): string =
   ## Renders a horizontal separator rule of specified width.
   let w = if width > 0: width else: 80
   repeat(sepChar, w)
@@ -177,12 +177,12 @@ proc renderStreamHeader*(opts: StreamFormatOptions): string =
   ## Renders a standardized columnar table header using StreamFormatOptions.
   renderStreamHeader(opts.colorize, opts.useEmoji, opts.includeUserAgent, opts.maxWidth)
 
-proc renderStreamSeparator*(opts: StreamFormatOptions, sepChar: char = '-'): string =
+func renderStreamSeparator*(opts: StreamFormatOptions, sepChar: char = '-'): string =
   ## Renders a horizontal separator rule sized to opts.maxWidth or fallback.
   let w = if opts.maxWidth > 0: opts.maxWidth else: 80
   repeat(sepChar, w)
 
-proc isSuspiciousParamValue*(val: string): bool =
+func isSuspiciousParamValue*(val: string): bool =
   ## Returns true if a URI path or parameter value contains known attack signatures.
   let lower = val.toLowerAscii()
   # Directory traversal
@@ -622,7 +622,7 @@ proc sortClustersByRisk*(clusters: openArray[ActorCluster]): seq[ActorCluster] =
     return cmp(a.clusterId, b.clusterId)
   )
 
-proc formatThreatLevelBadge*(category: ActorCategory, score: int, colorize: bool = true): string =
+func formatThreatLevelBadge*(category: ActorCategory, score: int, colorize: bool = true): string =
   ## Formats intent badge along with numeric score for tabular views:
   ## e.g. `[ HACKER! ] 95` or `[REAL USER]  5`
   let badge = formatIntentBadge(category, colorize)
@@ -1123,7 +1123,7 @@ type
     ReportUfw,        ## Executable bash script containing ufw deny commands
     ReportIptables    ## Executable bash script containing iptables DROP commands
 
-proc generateFail2banRules*(
+func generateFail2banRules*(
   clusters: openArray[ActorCluster],
   jail: string = "nginx-botsearch",
   minRiskScore: int = 50
@@ -1151,7 +1151,7 @@ proc generateFail2banRules*(
     lines.add("fail2ban-client set " & jail & " banip " & ip)
   result = lines.join("\n")
 
-proc generateUfwRules*(
+func generateUfwRules*(
   clusters: openArray[ActorCluster],
   minRiskScore: int = 50
 ): string =
@@ -1179,7 +1179,7 @@ proc generateUfwRules*(
     lines.add("ufw deny from " & ip & " to any comment 'http_logviewer " & cid & "'")
   result = lines.join("\n")
 
-proc generateIptablesRules*(
+func generateIptablesRules*(
   clusters: openArray[ActorCluster],
   chain: string = "INPUT",
   minRiskScore: int = 50
@@ -1208,7 +1208,7 @@ proc generateIptablesRules*(
     lines.add("iptables -A " & chain & " -s " & ip & " -j DROP -m comment --comment 'http_logviewer " & cid & "'")
   result = lines.join("\n")
 
-proc generateFirewallRules*(
+func generateFirewallRules*(
   clusters: openArray[ActorCluster],
   ruleType: string = "fail2ban",
   minRiskScore: int = 50

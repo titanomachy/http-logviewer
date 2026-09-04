@@ -54,14 +54,14 @@ type
 
 # --- Stringifiers and Parsers for Enums ---
 
-proc `$`*(f: OutputFormat): string =
+func `$`*(f: OutputFormat): string =
   ## Returns canonical string representation of OutputFormat.
   case f
   of FormatStreamTable: "stream_table"
   of FormatJson: "json"
   of FormatGroupedSummary: "grouped_summary"
 
-proc parseOutputFormat*(s: string): OutputFormat =
+func parseOutputFormat*(s: string): OutputFormat =
   ## Parses OutputFormat from string. Raises ConfigError on unrecognized format.
   case s.toLowerAscii().strip()
   of "stream", "table", "stream_table", "streamtable": FormatStreamTable
@@ -70,7 +70,7 @@ proc parseOutputFormat*(s: string): OutputFormat =
   else:
     raise newException(ConfigError, "Unknown output format: '" & s & "'. Supported: stream_table, json, grouped_summary")
 
-proc `$`*(f: LogFormat): string =
+func `$`*(f: LogFormat): string =
   ## Returns canonical string representation of LogFormat.
   case f
   of LogFormatAuto: "auto"
@@ -79,7 +79,7 @@ proc `$`*(f: LogFormat): string =
   of LogFormatNginx: "nginx"
   of LogFormatJson: "json"
 
-proc parseLogFormat*(s: string): LogFormat =
+func parseLogFormat*(s: string): LogFormat =
   ## Parses LogFormat from string. Raises ConfigError on unrecognized format.
   case s.toLowerAscii().strip()
   of "auto", "": LogFormatAuto
@@ -90,14 +90,14 @@ proc parseLogFormat*(s: string): LogFormat =
   else:
     raise newException(ConfigError, "Unknown log format: '" & s & "'. Supported: auto, clf, combined, nginx, json")
 
-proc `$`*(m: ColorMode): string =
+func `$`*(m: ColorMode): string =
   ## Returns canonical string representation of ColorMode.
   case m
   of ColorModeAuto: "auto"
   of ColorModeAlways: "always"
   of ColorModeNever: "never"
 
-proc parseColorMode*(s: string): ColorMode =
+func parseColorMode*(s: string): ColorMode =
   ## Parses ColorMode from string. Raises ConfigError on unrecognized mode.
   case s.toLowerAscii().strip()
   of "auto", "": ColorModeAuto
@@ -108,7 +108,7 @@ proc parseColorMode*(s: string): ColorMode =
 
 # --- FilterCriteria Procedures ---
 
-proc defaultFilterCriteria*(): FilterCriteria =
+func defaultFilterCriteria*(): FilterCriteria =
   ## Returns default FilterCriteria accepting all traffic without filtering.
   FilterCriteria(
     minThreatScore: 0,
@@ -120,7 +120,7 @@ proc defaultFilterCriteria*(): FilterCriteria =
     categoryFilter: none(ActorCategory)
   )
 
-proc initFilterCriteria*(
+func initFilterCriteria*(
     minThreatScore: int = 0,
     statusWhitelist: openArray[int] = [],
     statusBlacklist: openArray[int] = [],
@@ -209,7 +209,7 @@ proc validate*(fc: FilterCriteria) =
   for cc in fc.countryBlacklist:
     ensureConfig(cc.len >= 2 and cc.len <= 3, "Invalid country code in countryBlacklist: '" & cc & "'")
 
-proc `==`*(a, b: FilterCriteria): bool =
+func `==`*(a, b: FilterCriteria): bool =
   ## Value equality for FilterCriteria.
   if a.minThreatScore != b.minThreatScore: return false
   if a.statusWhitelist != b.statusWhitelist: return false
@@ -220,7 +220,7 @@ proc `==`*(a, b: FilterCriteria): bool =
   if a.categoryFilter != b.categoryFilter: return false
   return true
 
-proc `$`*(fc: FilterCriteria): string =
+func `$`*(fc: FilterCriteria): string =
   ## Returns compact string description of FilterCriteria.
   result = "FilterCriteria(minThreatScore: " & $fc.minThreatScore
   if fc.statusWhitelist.len > 0:
@@ -253,7 +253,7 @@ proc `%`*(fc: FilterCriteria): JsonNode =
 
 # --- ViewerConfig Procedures ---
 
-proc defaultViewerConfig*(): ViewerConfig =
+func defaultViewerConfig*(): ViewerConfig =
   ## Returns standard production default ViewerConfig.
   result = ViewerConfig(
     logFilePath: "-",
@@ -271,7 +271,7 @@ proc defaultViewerConfig*(): ViewerConfig =
     filters: defaultFilterCriteria()
   )
 
-proc initViewerConfig*(
+func initViewerConfig*(
     logFilePath: string = "-",
     follow: bool = false,
     colorOutput: bool = true,
@@ -339,7 +339,7 @@ proc isValid*(cfg: ViewerConfig): bool =
   except ConfigError:
     return false
 
-proc `==`*(a, b: ViewerConfig): bool =
+func `==`*(a, b: ViewerConfig): bool =
   ## Structural value equality for ViewerConfig.
   if a.logFilePath != b.logFilePath: return false
   if a.follow != b.follow: return false
@@ -356,7 +356,7 @@ proc `==`*(a, b: ViewerConfig): bool =
   if a.filters != b.filters: return false
   return true
 
-proc `$`*(cfg: ViewerConfig): string =
+func `$`*(cfg: ViewerConfig): string =
   ## Returns compact single-line description of ViewerConfig.
   result = "ViewerConfig(log: \"" & cfg.logFilePath & "\"" &
     ", format: " & $cfg.outputFormat &
@@ -367,7 +367,7 @@ proc `$`*(cfg: ViewerConfig): string =
     ", minScore: " & $cfg.minThreatScore &
     ")"
 
-proc pretty*(cfg: ViewerConfig): string =
+func pretty*(cfg: ViewerConfig): string =
   ## Formats a multi-line human-readable summary of the configuration.
   result = "ViewerConfig:\n"
   result.add("  Log File Path:              " & cfg.logFilePath & "\n")

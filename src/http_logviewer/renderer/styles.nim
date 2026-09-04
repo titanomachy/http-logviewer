@@ -62,7 +62,7 @@ const
   BadgeHackerMono*     = "[ HACKER! ]"
   BadgeUnknownMono*    = "[ UNKNOWN ]"
 
-proc formatStatusCode*(code: int, colorize: bool = true): string =
+func formatStatusCode*(code: int, colorize: bool = true): string =
   ## Renders a 3-digit HTTP status code with high-contrast background coloring.
   ##
   ## Format Mapping:
@@ -98,7 +98,7 @@ proc formatStatusCode*(code: int, colorize: bool = true): string =
   else:
     BgGray & text & Reset
 
-proc stripAnsi*(s: string): string =
+func stripAnsi*(s: string): string =
   ## Strips all ANSI escape sequences (`\e[...m`) from a string.
   result = newStringOfCap(s.len)
   var i = 0
@@ -151,7 +151,7 @@ proc shouldColorize*(mode: ColorMode = ColorModeAuto, isAttyOverride: Option[boo
   of ColorModeAuto:
     detectColorSupport(isAttyOverride)
 
-proc formatIntentBadge*(category: ActorCategory, colorize: bool = true): string =
+func formatIntentBadge*(category: ActorCategory, colorize: bool = true): string =
   ## Formats visitor category intent badge.
   ##
   ## Categories:
@@ -181,7 +181,7 @@ proc formatIntentBadge*(category: ActorCategory, colorize: bool = true): string 
     of CategoryBadActorHacker: BadgeHacker
     of CategoryUnknown: BadgeUnknown
 
-proc formatIntentBadge*(threat: ThreatProfile, colorize: bool = true): string {.inline.} =
+func formatIntentBadge*(threat: ThreatProfile, colorize: bool = true): string {.inline.} =
   ## Convenience overload extracting category from ThreatProfile.
   formatIntentBadge(threat.category, colorize)
 
@@ -194,7 +194,7 @@ func isEmojiRune*(r: Rune): bool {.inline.} =
   let cp = int(r)
   (cp in 0x1F300..0x1F9FF) or (cp in 0x2600..0x26FF) or (cp in 0x2700..0x27BF) or (cp in 0x1FA00..0x1FAFF)
 
-proc terminalDisplayWidth*(s: string): int =
+func terminalDisplayWidth*(s: string): int =
   ## Calculates the visible visual column width of a string rendered in a monospace terminal.
   ## Strips ANSI escape sequences and accounts for 2-column wide Unicode emoji symbols
   ## and regional indicator flag pairs (e.g. 🇺🇸 = 2 columns).
@@ -232,7 +232,7 @@ proc terminalDisplayWidth*(s: string): int =
 
   result = width
 
-proc alignColumn*(s: string, targetWidth: int, alignRight: bool = false): string =
+func alignColumn*(s: string, targetWidth: int, alignRight: bool = false): string =
   ## Aligns string `s` to occupy exactly `targetWidth` terminal columns,
   ## accurately taking into account ANSI escape sequences and multi-byte / emoji widths.
   let visual = terminalDisplayWidth(s)
@@ -244,7 +244,7 @@ proc alignColumn*(s: string, targetWidth: int, alignRight: bool = false): string
   else:
     result = s & pad
 
-proc formatCountryColumn*(countryCode: string, flagEmoji: string = "", useEmoji: bool = true, width: int = 7): string =
+func formatCountryColumn*(countryCode: string, flagEmoji: string = "", useEmoji: bool = true, width: int = 7): string =
   ## Formats country flag and country code into aligned columns (e.g. "🇺🇸 US  ", `[US] US`).
   let code = countryCode.strip().toUpperAscii()
   let displayedCode = if code.len == 2:
@@ -278,6 +278,6 @@ proc formatCountryColumn*(countryCode: string, flagEmoji: string = "", useEmoji:
 
   alignColumn(raw, width)
 
-proc formatCountryColumn*(geo: GeoLocation, useEmoji: bool = true, width: int = 7): string =
+func formatCountryColumn*(geo: GeoLocation, useEmoji: bool = true, width: int = 7): string =
   ## Overload accepting a GeoLocation object.
   formatCountryColumn(geo.countryCode, geo.flagEmoji, useEmoji = useEmoji, width = width)

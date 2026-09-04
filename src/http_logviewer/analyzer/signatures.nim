@@ -78,14 +78,14 @@ const
 # URL Decoding & Payload Normalization
 # ==============================================================================
 
-proc hexCharToInt(c: char): int {.inline.} =
+func hexCharToInt(c: char): int {.inline.} =
   case c
   of '0'..'9': ord(c) - ord('0')
   of 'a'..'f': ord(c) - ord('a') + 10
   of 'A'..'F': ord(c) - ord('A') + 10
   else: -1
 
-proc decodeUrlComponentSafe*(s: string): string =
+func decodeUrlComponentSafe*(s: string): string =
   ## Safely decodes percent-encoded bytes (%XX) without raising exceptions on malformed input.
   ## Leaves invalid sequences verbatim.
   result = newStringOfCap(s.len)
@@ -103,7 +103,7 @@ proc decodeUrlComponentSafe*(s: string): string =
     result.add(s[i])
     inc(i)
 
-proc decodeMultiPassUrl*(s: string, maxPasses: int = 3): string =
+func decodeMultiPassUrl*(s: string, maxPasses: int = 3): string =
   ## Repeatedly decodes percent-encoded sequences up to `maxPasses` times or until
   ## no further changes occur. This defeats multi-layer obfuscation (e.g. %252e%252e%252f).
   result = s
@@ -115,7 +115,7 @@ proc decodeMultiPassUrl*(s: string, maxPasses: int = 3): string =
       break
     result = decoded
 
-proc normalizePayload*(s: string): string =
+func normalizePayload*(s: string): string =
   ## Normalizes a URL path or query string for attack signature evaluation:
   ## 1. Decodes multi-pass URL encoding (e.g. %252e -> %2e -> .)
   ## 2. Converts backslashes '\' to forward slashes '/'
@@ -128,7 +128,7 @@ proc normalizePayload*(s: string): string =
     else:
       result.add(c.toLowerAscii())
 
-proc extractPathAndQuery*(uri: string): tuple[path: string, query: string] =
+func extractPathAndQuery*(uri: string): tuple[path: string, query: string] =
   ## Splits a URI into path and query components.
   let qIdx = uri.find('?')
   if qIdx >= 0:
@@ -142,7 +142,7 @@ proc extractPathAndQuery*(uri: string): tuple[path: string, query: string] =
 # Item 01: Sensitive File Probe Detector
 # ==============================================================================
 
-proc detectSensitiveFileProbe*(rawUri: string): Option[string] =
+func detectSensitiveFileProbe*(rawUri: string): Option[string] =
   ## Checks if `rawUri` targets sensitive configuration, environment, key, or backup files.
   ## Returns `some(signature)` if matched, or `none(string)`.
   if rawUri.len == 0:
@@ -181,7 +181,7 @@ proc detectSensitiveFileProbe*(rawUri: string): Option[string] =
 
   return none(string)
 
-proc isSensitiveFileProbe*(rawUri: string): bool {.inline.} =
+func isSensitiveFileProbe*(rawUri: string): bool {.inline.} =
   ## Returns true if `rawUri` targets sensitive files or configurations.
   detectSensitiveFileProbe(rawUri).isSome
 
@@ -189,7 +189,7 @@ proc isSensitiveFileProbe*(rawUri: string): bool {.inline.} =
 # Item 02: Content Management System (CMS) & Web Admin Exploit Detector
 # ==============================================================================
 
-proc detectCmsExploit*(rawUri: string): Option[string] =
+func detectCmsExploit*(rawUri: string): Option[string] =
   ## Checks if `rawUri` targets CMS exploits or administrative entrypoints.
   ## Returns `some(signature)` if matched, or `none(string)`.
   if rawUri.len == 0:
@@ -209,7 +209,7 @@ proc detectCmsExploit*(rawUri: string): Option[string] =
 
   return none(string)
 
-proc isCmsExploit*(rawUri: string): bool {.inline.} =
+func isCmsExploit*(rawUri: string): bool {.inline.} =
   ## Returns true if `rawUri` targets CMS exploits or administrative portals.
   detectCmsExploit(rawUri).isSome
 
@@ -217,7 +217,7 @@ proc isCmsExploit*(rawUri: string): bool {.inline.} =
 # Item 03: Directory Traversal Detector
 # ==============================================================================
 
-proc detectDirectoryTraversal*(rawUri: string): Option[string] =
+func detectDirectoryTraversal*(rawUri: string): Option[string] =
   ## Detects directory traversal patterns (e.g. ../, ..\, %2e%2e%2f, %252e%252e%252f,
   ## /etc/passwd, c:\windows).
   ## Returns `some(matchedPattern)` if detected.
@@ -246,7 +246,7 @@ proc detectDirectoryTraversal*(rawUri: string): Option[string] =
 
   return none(string)
 
-proc isDirectoryTraversal*(rawUri: string): bool {.inline.} =
+func isDirectoryTraversal*(rawUri: string): bool {.inline.} =
   ## Returns true if `rawUri` exhibits directory traversal patterns.
   detectDirectoryTraversal(rawUri).isSome
 
@@ -254,7 +254,7 @@ proc isDirectoryTraversal*(rawUri: string): bool {.inline.} =
 # Item 04: SQL Injection Pattern Detector
 # ==============================================================================
 
-proc detectSqlInjection*(rawUri: string): Option[string] =
+func detectSqlInjection*(rawUri: string): Option[string] =
   ## Detects SQL injection patterns in paths or query strings.
   ## Handles raw, URL-encoded (+ and %20), and normalized representations.
   if rawUri.len == 0:
@@ -288,7 +288,7 @@ proc detectSqlInjection*(rawUri: string): Option[string] =
 
   return none(string)
 
-proc isSqlInjection*(rawUri: string): bool {.inline.} =
+func isSqlInjection*(rawUri: string): bool {.inline.} =
   ## Returns true if `rawUri` exhibits SQL injection characteristics.
   detectSqlInjection(rawUri).isSome
 
@@ -296,7 +296,7 @@ proc isSqlInjection*(rawUri: string): bool {.inline.} =
 # Item 05: Remote Code Execution (RCE) & Command Injection Detector
 # ==============================================================================
 
-proc detectCommandInjection*(rawUri: string): Option[string] =
+func detectCommandInjection*(rawUri: string): Option[string] =
   ## Detects Remote Code Execution (RCE), command injection, and shell probes.
   if rawUri.len == 0:
     return none(string)
@@ -325,7 +325,7 @@ proc detectCommandInjection*(rawUri: string): Option[string] =
 
   return none(string)
 
-proc isCommandInjection*(rawUri: string): bool {.inline.} =
+func isCommandInjection*(rawUri: string): bool {.inline.} =
   ## Returns true if `rawUri` exhibits command injection or shell execution syntax.
   detectCommandInjection(rawUri).isSome
 
@@ -333,7 +333,7 @@ proc isCommandInjection*(rawUri: string): bool {.inline.} =
 # Item 06: Log4j / JNDI Probe Detector
 # ==============================================================================
 
-proc detectLog4jJndi*(rawUri: string): Option[string] =
+func detectLog4jJndi*(rawUri: string): Option[string] =
   ## Detects Log4j / JNDI exploit injection probes (${jndi:ldap://, ${jndi:rmi://, etc.)
   ## including nested lookup evasion (${${lower:j}ndi:).
   if rawUri.len == 0:
@@ -355,7 +355,7 @@ proc detectLog4jJndi*(rawUri: string): Option[string] =
 
   return none(string)
 
-proc isLog4jJndi*(rawUri: string): bool {.inline.} =
+func isLog4jJndi*(rawUri: string): bool {.inline.} =
   ## Returns true if `rawUri` exhibits Log4j or JNDI injection syntax.
   detectLog4jJndi(rawUri).isSome
 
@@ -377,7 +377,7 @@ type
     flag*: ThreatFlag
     matchedPattern*: string
 
-proc scanAttackSignatures*(rawUri: string): seq[AttackSignatureMatch] =
+func scanAttackSignatures*(rawUri: string): seq[AttackSignatureMatch] =
   ## Comprehensive scan of `rawUri` across all attack signature databases.
   ## Returns a sequence of all identified attack matches.
   result = @[]
@@ -437,7 +437,7 @@ proc scanAttackSignatures*(rawUri: string): seq[AttackSignatureMatch] =
         matchedPattern: cmd.get()
       ))
 
-proc analyzeAttackPayload*(rawUri: string): tuple[flags: set[ThreatFlag], matches: seq[string]] =
+func analyzeAttackPayload*(rawUri: string): tuple[flags: set[ThreatFlag], matches: seq[string]] =
   ## Evaluates `rawUri` and returns a tuple of triggered `ThreatFlag` set and
   ## diagnostic match descriptions suitable for `ThreatProfile.matchedSignatures`.
   var flags: set[ThreatFlag] = {}
@@ -462,6 +462,6 @@ proc analyzeAttackPayload*(rawUri: string): tuple[flags: set[ThreatFlag], matche
 
   result = (flags: flags, matches: matches)
 
-proc containsAttackSignature*(rawUri: string): bool {.inline.} =
+func containsAttackSignature*(rawUri: string): bool {.inline.} =
   ## Fast boolean check whether `rawUri` triggers any known attack signatures.
   scanAttackSignatures(rawUri).len > 0

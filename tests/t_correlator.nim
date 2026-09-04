@@ -794,8 +794,7 @@ suite "Synchronized Burst Request Detection (Phase 05 / Category C / Item 03)":
     let table = newActorClusterTable(windowSeconds = 1800, burstThresholdMs = 1000)
     let t0 = parse("2026-09-04T07:00:00+02:00", "yyyy-MM-dd'T'HH:mm:sszzz")
     # 200 ms later:
-    var t1 = t0
-    t1.nanosecond = 200_000_000
+    let t1 = t0 + initDuration(milliseconds = 200)
 
     let entry1 = initHttpLogEntry(
       clientIp = "192.0.2.1",

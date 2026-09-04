@@ -62,7 +62,7 @@ proc enrichWithGeo*(engine: GeoIpEngine, ip: string): GeoLocation {.inline.} =
   ## Specification 07 conformant alias for `enrichGeo(engine, ip)`.
   enrichGeo(engine, ip)
 
-proc analyzeEntry*(entry: HttpLogEntry): ThreatProfile =
+func analyzeEntry*(entry: HttpLogEntry): ThreatProfile =
   ## High-level library procedure evaluating visitor intent and anomaly risk score (0 to 100)
   ## for a single `HttpLogEntry`.
   ##
@@ -76,7 +76,7 @@ proc analyzeEntry*(entry: HttpLogEntry): ThreatProfile =
   ## Thread-safety: Pure function, zero global mutable state, completely reentrant and thread-safe.
   classifier.evaluateThreat(entry)
 
-proc analyzeRequest*(entry: HttpLogEntry): ThreatProfile {.inline.} =
+func analyzeRequest*(entry: HttpLogEntry): ThreatProfile {.inline.} =
   ## Specification 07 conformant alias for `analyzeEntry(entry)`.
   analyzeEntry(entry)
 

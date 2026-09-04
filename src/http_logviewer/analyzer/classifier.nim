@@ -42,7 +42,7 @@ const
     "/login", "/actuator", "/telescope", "/pma", "/phpmyadmin"
   ]
 
-proc extractPathOnly*(rawUri: string): string =
+func extractPathOnly*(rawUri: string): string =
   ## Extracts the clean path portion of a URI, stripping query strings and converting to lowercase.
   if rawUri.len == 0:
     return ""
@@ -50,7 +50,7 @@ proc extractPathOnly*(rawUri: string): string =
   let p = if qIdx >= 0: rawUri[0 ..< qIdx] else: rawUri
   p.toLowerAscii()
 
-proc isStaticAssetPath*(rawUri: string): bool =
+func isStaticAssetPath*(rawUri: string): bool =
   ## Checks whether `rawUri` targets a static web asset (CSS, JavaScript, images, fonts, media, icons).
   ## Query strings are ignored.
   if rawUri.len == 0:
@@ -63,11 +63,11 @@ proc isStaticAssetPath*(rawUri: string): bool =
       return true
   return false
 
-proc isEndpointPath*(rawUri: string): bool {.inline.} =
+func isEndpointPath*(rawUri: string): bool {.inline.} =
   ## Returns true if `rawUri` targets an HTML document, API endpoint, or script rather than a static asset.
   not isStaticAssetPath(rawUri)
 
-proc isAdministrativePath*(rawUri: string): bool =
+func isAdministrativePath*(rawUri: string): bool =
   ## Checks if `rawUri` targets an administrative portal, dashboard, CMS backend, or framework debugger.
   if rawUri.len == 0:
     return false
@@ -111,7 +111,7 @@ proc newVisitorBehaviorTracker*(maxEntries: int = 10000, timeWindowSeconds: int 
     timeWindowSeconds: timeWindowSeconds
   )
 
-proc staticAssetRatio*(stats: VisitorStats): float =
+func staticAssetRatio*(stats: VisitorStats): float =
   ## Computes the ratio of static asset requests to total requests (0.0 to 1.0).
   ## Human browsing typically yields 0.35 to 0.95. Automated scrapers yield ~0.0.
   if stats.totalRequests <= 0:
@@ -124,7 +124,7 @@ proc staticAssetRatio*(tracker: VisitorBehaviorTracker, ip: string): float =
     return 0.0
   tracker.stats[ip].staticAssetRatio()
 
-proc calculate404Velocity*(stats: VisitorStats, currentTime: DateTime, windowSeconds: int = 60): int =
+func calculate404Velocity*(stats: VisitorStats, currentTime: DateTime, windowSeconds: int = 60): int =
   ## Returns the count of 404 responses observed within the last `windowSeconds`.
   if not currentTime.isInitialized:
     return stats.recent404Timestamps.len
@@ -212,7 +212,7 @@ proc clear*(tracker: VisitorBehaviorTracker) =
 # Item 01 Procs: Static Asset Ratio Heuristic Evaluation
 # ==============================================================================
 
-proc evaluateStaticAssetRatio*(stats: Option[VisitorStats]): tuple[score: int, flags: set[ThreatFlag], rules: seq[string]] =
+func evaluateStaticAssetRatio*(stats: Option[VisitorStats]): tuple[score: int, flags: set[ThreatFlag], rules: seq[string]] =
   ## Evaluates visitor request history for static asset ratio anomalies.
   ## - If a client makes >= 5 requests with 0 static assets, flags ThreatNoAssetFetch (+20 pts).
   ## - If a client demonstrates healthy browsing (> 35% static assets), provides a -10 pt mitigating bonus.
@@ -239,7 +239,7 @@ proc evaluateStaticAssetRatio*(stats: Option[VisitorStats]): tuple[score: int, f
 # Item 02 Procs: 404 Error Velocity Heuristic Evaluation
 # ==============================================================================
 
-proc evaluate404Heuristics*(
+func evaluate404Heuristics*(
   entry: HttpLogEntry,
   stats: Option[VisitorStats] = none(VisitorStats)
 ): tuple[score: int, flags: set[ThreatFlag], rules: seq[string]] =
@@ -297,7 +297,7 @@ proc evaluate404Heuristics*(
 # Item 03 Procs: HTTP Method Anomaly Scoring
 # ==============================================================================
 
-proc evaluateMethodAnomaly*(entry: HttpLogEntry): tuple[score: int, flags: set[ThreatFlag], rules: seq[string]] =
+func evaluateMethodAnomaly*(entry: HttpLogEntry): tuple[score: int, flags: set[ThreatFlag], rules: seq[string]] =
   ## Evaluates HTTP request method verbs for protocol anomalies and suspicious targeting:
   ## - CONNECT / TRACE proxy or debugging attempts (+35 pts, ThreatMalformedRequest)
   ## - Non-standard HTTP verbs (+20 pts, ThreatMalformedRequest)
@@ -350,7 +350,7 @@ proc evaluateMethodAnomaly*(entry: HttpLogEntry): tuple[score: int, flags: set[T
 # Item 05: Score to ActorCategory Mapping
 # ==============================================================================
 
-proc scoreToActorCategory*(score: int, uaCategory: ActorCategory = CategoryUnknown): ActorCategory =
+func scoreToActorCategory*(score: int, uaCategory: ActorCategory = CategoryUnknown): ActorCategory =
   ## Maps composite risk score (0-100) and User-Agent category into canonical ActorCategory:
   ## - 50..100: CategoryBadActorHacker
   ## - 21..49:  CategorySuspicious (SuspiciousScanner)
@@ -370,7 +370,7 @@ proc scoreToActorCategory*(score: int, uaCategory: ActorCategory = CategoryUnkno
 # Item 04: Composite Risk Score Calculator
 # ==============================================================================
 
-proc evaluateThreat*(
+func evaluateThreat*(
   entry: HttpLogEntry,
   stats: Option[VisitorStats]
 ): ThreatProfile =
@@ -458,7 +458,7 @@ proc evaluateThreat*(
     matchedSignatures = matchedRules
   )
 
-proc evaluateThreat*(entry: HttpLogEntry): ThreatProfile =
+func evaluateThreat*(entry: HttpLogEntry): ThreatProfile =
   ## Evaluates threat posture for a standalone log entry without session history.
   evaluateThreat(entry, none(VisitorStats))
 

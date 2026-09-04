@@ -208,7 +208,7 @@ func normalizeUrl*(path: string): string =
   else:
     result = normP
 
-proc hashQueryNormalizedUrl*(url: string): Hash =
+func hashQueryNormalizedUrl*(url: string): Hash =
   ## Returns the hash of the URL after structural path and query parameter normalization.
   hash(normalizeUrl(url))
 
@@ -216,7 +216,7 @@ proc hashQueryNormalizedUrl*(url: string): Hash =
 # Path Sequence Hasher (Item 02)
 # ==============================================================================
 
-proc hashPathSequence*(paths: openArray[string]): Hash =
+func hashPathSequence*(paths: openArray[string]): Hash =
   ## Creates a structural signature of attack sequences (e.g. probeA -> probeB -> probeC)
   ## by normalizing each path and hashing them in strict sequential order.
   var h: Hash = 0
@@ -225,7 +225,7 @@ proc hashPathSequence*(paths: openArray[string]): Hash =
     h = h !& hash(norm)
   result = !$h
 
-proc formatPathSequence*(paths: openArray[string]): string =
+func formatPathSequence*(paths: openArray[string]): string =
   ## Formats a sequence of probed paths into a canonical breadcrumb string
   ## for logging, inspection, or cluster summaries.
   var normList: seq[string] = @[]
@@ -245,7 +245,7 @@ func initProbeSequenceTracker*(maxHistory: int = 50): ProbeSequenceTracker =
   ## Initializes a new ProbeSequenceTracker with a bounded history buffer.
   ProbeSequenceTracker(probedPaths: @[], maxHistory: maxHistory)
 
-proc addPath*(tracker: var ProbeSequenceTracker, path: string) =
+func addPath*(tracker: var ProbeSequenceTracker, path: string) =
   ## Ingests a new path into the sequence tracker, maintaining bounded history.
   if path.strip().len == 0:
     return
@@ -253,15 +253,15 @@ proc addPath*(tracker: var ProbeSequenceTracker, path: string) =
   if tracker.probedPaths.len > tracker.maxHistory and tracker.maxHistory > 0:
     tracker.probedPaths.delete(0)
 
-proc sequenceHash*(tracker: ProbeSequenceTracker): Hash =
+func sequenceHash*(tracker: ProbeSequenceTracker): Hash =
   ## Computes the structural sequence hash of all tracked paths.
   hashPathSequence(tracker.probedPaths)
 
-proc formatSequence*(tracker: ProbeSequenceTracker): string =
+func formatSequence*(tracker: ProbeSequenceTracker): string =
   ## Returns the breadcrumb string of tracked paths.
   formatPathSequence(tracker.probedPaths)
 
-proc len*(tracker: ProbeSequenceTracker): int {.inline.} =
+func len*(tracker: ProbeSequenceTracker): int {.inline.} =
   ## Number of paths currently tracked.
   tracker.probedPaths.len
 
@@ -269,7 +269,7 @@ proc len*(tracker: ProbeSequenceTracker): int {.inline.} =
 # Jaccard Similarity Scoring (Item 04)
 # ==============================================================================
 
-proc jaccardSimilarity*[T](setA, setB: HashSet[T]): float =
+func jaccardSimilarity*[T](setA, setB: HashSet[T]): float =
   ## Calculates the Jaccard similarity index between two sets:
   ## J(A, B) = size(intersection(A, B)) / size(union(A, B)).
   ## Returns 1.0 if both sets are empty, or a float in range 0.0 to 1.0.
@@ -281,7 +281,7 @@ proc jaccardSimilarity*[T](setA, setB: HashSet[T]): float =
   let interLen = (setA * setB).len
   result = interLen.float / unionLen.float
 
-proc pathSetSimilarity*(pathsA, pathsB: openArray[string]): float =
+func pathSetSimilarity*(pathsA, pathsB: openArray[string]): float =
   ## Computes Jaccard similarity across two collections of probed paths
   ## after structural pattern normalization.
   var setA = initHashSet[string]()
@@ -292,11 +292,11 @@ proc pathSetSimilarity*(pathsA, pathsB: openArray[string]): float =
     setB.incl(normalizePathPattern(p))
   result = jaccardSimilarity(setA, setB)
 
-proc isPathSimilarityAbove*(pathsA, pathsB: openArray[string], threshold: float = 0.70): bool =
+func isPathSimilarityAbove*(pathsA, pathsB: openArray[string], threshold: float = 0.70): bool =
   ## Returns true if the structural path similarity meets or exceeds the given threshold.
   pathSetSimilarity(pathsA, pathsB) >= threshold
 
-proc fingerprintSimilarity*(
+func fingerprintSimilarity*(
   fpA, fpB: ActorFingerprint,
   pathsA: openArray[string] = @[],
   pathsB: openArray[string] = @[]
@@ -345,7 +345,7 @@ const SessionParamNames*: seq[string] = @[
   "client_id", "uid", "user_id"
 ]
 
-proc extractSessionTokens*(entry: HttpLogEntry): seq[tuple[key: string, value: string]] =
+func extractSessionTokens*(entry: HttpLogEntry): seq[tuple[key: string, value: string]] =
   ## Extracts known session identifiers, tracking keys, or API tokens from query parameters
   ## and raw log headers (Item 05).
   result = @[]
@@ -384,7 +384,7 @@ proc extractSessionTokens*(entry: HttpLogEntry): seq[tuple[key: string, value: s
               result.add((k, v))
             break
 
-proc extractTokensFromUrl*(url: string): seq[tuple[key: string, value: string]] =
+func extractTokensFromUrl*(url: string): seq[tuple[key: string, value: string]] =
   ## Extracts known session tokens directly from a URL string.
   result = @[]
   let qIdx = url.find('?')
@@ -401,7 +401,7 @@ proc extractTokensFromUrl*(url: string): seq[tuple[key: string, value: string]] 
             result.add((k, v))
             break
 
-proc extractTokensFromRawLine*(rawLine: string): seq[tuple[key: string, value: string]] =
+func extractTokensFromRawLine*(rawLine: string): seq[tuple[key: string, value: string]] =
   ## Scans a raw log line for embedded cookie tokens or authentication headers.
   result = @[]
   let lowerRaw = rawLine.toLowerAscii()
@@ -421,7 +421,7 @@ proc extractTokensFromRawLine*(rawLine: string): seq[tuple[key: string, value: s
         result.add((actualKey, actualVal))
       searchPos = valEnd
 
-proc extractUniqueTokens*(entry: HttpLogEntry): seq[string] =
+func extractUniqueTokens*(entry: HttpLogEntry): seq[string] =
   ## Returns a simplified list of distinct "key=value" token pairs extracted from the entry.
   let tokens = extractSessionTokens(entry)
   var tokenSet = initHashSet[string]()
@@ -432,7 +432,7 @@ proc extractUniqueTokens*(entry: HttpLogEntry): seq[string] =
     result.add(item)
   result.sort()
 
-proc getSharedSessionTokens*(entryA, entryB: HttpLogEntry): seq[string] =
+func getSharedSessionTokens*(entryA, entryB: HttpLogEntry): seq[string] =
   ## Returns the list of session tokens shared between two requests.
   let tokensA = extractUniqueTokens(entryA)
   let tokensB = extractUniqueTokens(entryB)
@@ -443,7 +443,7 @@ proc getSharedSessionTokens*(entryA, entryB: HttpLogEntry): seq[string] =
     if t in setB:
       result.add(t)
 
-proc hasSharedSessionToken*(entryA, entryB: HttpLogEntry): bool =
+func hasSharedSessionToken*(entryA, entryB: HttpLogEntry): bool =
   ## Returns true if two requests share at least one session token or unique query identifier.
   getSharedSessionTokens(entryA, entryB).len > 0
 
@@ -451,7 +451,7 @@ proc hasSharedSessionToken*(entryA, entryB: HttpLogEntry): bool =
 # Actor Fingerprint Synthesis (Item 01)
 # ==============================================================================
 
-proc generateProbeFingerprint*(
+func generateProbeFingerprint*(
   entry: HttpLogEntry,
   threat: ThreatProfile,
   acceptHeader: string = ""
@@ -482,7 +482,7 @@ proc generateProbeFingerprint*(
 
   result = !$h
 
-proc generateActorFingerprint*(
+func generateActorFingerprint*(
   entry: HttpLogEntry,
   threat: ThreatProfile,
   acceptHeader: string = ""
@@ -510,12 +510,12 @@ proc generateActorFingerprint*(
     sessionTokens: tokens
   )
 
-proc `$`*(fp: ActorFingerprint): string =
+func `$`*(fp: ActorFingerprint): string =
   ## Canonical stringifier for ActorFingerprint.
   "ActorFingerprint(hash: " & fp.hashHex & ", ua: \"" & fp.normalizedUa &
     "\", sigs: " & $fp.matchedSignatures & ", path: \"" & fp.pathPattern & "\")"
 
-proc `==`*(a, b: ActorFingerprint): bool =
+func `==`*(a, b: ActorFingerprint): bool =
   ## Equality check for ActorFingerprint based on its synthesized hash and tokens.
   a.rawHash == b.rawHash and
     a.normalizedUa == b.normalizedUa and
@@ -523,7 +523,7 @@ proc `==`*(a, b: ActorFingerprint): bool =
     a.pathPattern == b.pathPattern and
     a.sessionTokens == b.sessionTokens
 
-proc `%`*(fp: ActorFingerprint): JsonNode =
+func `%`*(fp: ActorFingerprint): JsonNode =
   ## Converts an ActorFingerprint into a JSON node.
   var sigsArr = newJArray()
   for s in fp.matchedSignatures:
@@ -796,7 +796,7 @@ func getDatacenterInfo*(prov: HostingProvider): DatacenterInfo =
   of ProviderNone:
     DatacenterInfo(provider: ProviderNone, providerName: "", asn: "", isDatacenter: false, riskPenalty: 0)
 
-proc identifyHostingProvider*(ip: string): DatacenterInfo =
+func identifyHostingProvider*(ip: string): DatacenterInfo =
   ## Identifies whether the specified client IP belongs to a known hosting provider or datacenter network.
   let cleaned = cleanIpAddress(ip)
   if cleaned.len == 0 or isPrivateIp(cleaned):
@@ -808,7 +808,7 @@ proc identifyHostingProvider*(ip: string): DatacenterInfo =
 
   getDatacenterInfo(ProviderNone)
 
-proc isKnownDatacenter*(ip: string): bool {.inline.} =
+func isKnownDatacenter*(ip: string): bool {.inline.} =
   ## Returns true if the IP address belongs to a known datacenter hosting provider.
   identifyHostingProvider(ip).isDatacenter
 
@@ -1461,18 +1461,18 @@ proc correlateRecord*(
 # Cluster Risk Metrics & Posture Calculation (Phase 05 / Category B / Item 05)
 # ==============================================================================
 
-proc attackDuration*(cluster: ActorCluster): Duration =
+func attackDuration*(cluster: ActorCluster): Duration =
   ## Calculates the time span between firstSeen and lastSeen for the cluster.
   if cluster.firstSeen.isInitialized and cluster.lastSeen.isInitialized and cluster.lastSeen >= cluster.firstSeen:
     cluster.lastSeen - cluster.firstSeen
   else:
     initDuration()
 
-proc attackDurationSeconds*(cluster: ActorCluster): int64 =
+func attackDurationSeconds*(cluster: ActorCluster): int64 =
   ## Returns the attack duration in integer seconds.
   cluster.attackDuration.inSeconds
 
-proc affectedTargets*(cluster: ActorCluster): int =
+func affectedTargets*(cluster: ActorCluster): int =
   ## Returns the number of distinct target paths probed by this actor cluster.
   cluster.probedPaths.len
 
@@ -1491,7 +1491,7 @@ func formatDuration*(d: Duration): string =
   else:
     result = $seconds & "s"
 
-proc calculateClusterMetrics*(cluster: ActorCluster): ClusterRiskMetrics =
+func calculateClusterMetrics*(cluster: ActorCluster): ClusterRiskMetrics =
   ## Calculates multi-dimensional cluster risk metrics including request velocity,
   ## distributed IP fleet size, targeted endpoint diversity, proxy rotation,
   ## hosting providers, synchronized bursts, and subnet coverage (Item 05).
@@ -1571,7 +1571,7 @@ proc calculateClusterMetrics*(cluster: ActorCluster): ClusterRiskMetrics =
     clusterTag: tag
   )
 
-proc `$`*(metrics: ClusterRiskMetrics): string =
+func `$`*(metrics: ClusterRiskMetrics): string =
   ## Canonical stringifier for ClusterRiskMetrics.
   var extras: seq[string] = @[]
   if metrics.clusterTag.len > 0: extras.add("Tag: " & metrics.clusterTag)
@@ -1589,7 +1589,7 @@ proc `$`*(metrics: ClusterRiskMetrics): string =
     ", Risk: " & $metrics.aggregateRisk & " [" & metrics.severity & "]" &
     extraStr & ")"
 
-proc `%`*(metrics: ClusterRiskMetrics): JsonNode =
+func `%`*(metrics: ClusterRiskMetrics): JsonNode =
   ## Serializes ClusterRiskMetrics into a JSON node.
   var subnetsArr = newJArray()
   for s in metrics.subnets: subnetsArr.add(%s)

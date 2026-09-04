@@ -176,7 +176,7 @@ const
 # Item 01 Procs: Verified Search Engine & Friendly Crawler Detection
 # ==============================================================================
 
-proc detectSearchEngineBot*(ua: string): Option[BotSignature] =
+func detectSearchEngineBot*(ua: string): Option[BotSignature] =
   ## Checks if the User-Agent belongs to a verified search engine bot (Googlebot, Bingbot, etc.).
   ## Matching is case-insensitive. Returns some(BotSignature) or none(BotSignature).
   if ua.len == 0:
@@ -189,11 +189,11 @@ proc detectSearchEngineBot*(ua: string): Option[BotSignature] =
 
   return none(BotSignature)
 
-proc isSearchEngineBot*(ua: string): bool {.inline.} =
+func isSearchEngineBot*(ua: string): bool {.inline.} =
   ## Returns true if `ua` matches a verified search engine bot.
   detectSearchEngineBot(ua).isSome
 
-proc detectFriendlyCrawler*(ua: string): Option[BotSignature] =
+func detectFriendlyCrawler*(ua: string): Option[BotSignature] =
   ## Checks if the User-Agent belongs to a friendly social/archivist crawler.
   if ua.len == 0:
     return none(BotSignature)
@@ -205,7 +205,7 @@ proc detectFriendlyCrawler*(ua: string): Option[BotSignature] =
 
   return none(BotSignature)
 
-proc isFriendlyCrawler*(ua: string): bool {.inline.} =
+func isFriendlyCrawler*(ua: string): bool {.inline.} =
   ## Returns true if `ua` matches a friendly crawler.
   detectFriendlyCrawler(ua).isSome
 
@@ -213,7 +213,7 @@ proc isFriendlyCrawler*(ua: string): bool {.inline.} =
 # Item 02 Procs: Commercial & SEO Crawler Detection
 # ==============================================================================
 
-proc detectCommercialCrawler*(ua: string): Option[BotSignature] =
+func detectCommercialCrawler*(ua: string): Option[BotSignature] =
   ## Checks if the User-Agent belongs to a known commercial, SEO, or data mining crawler.
   ## Matching is case-insensitive. Returns some(BotSignature) or none(BotSignature).
   if ua.len == 0:
@@ -226,7 +226,7 @@ proc detectCommercialCrawler*(ua: string): Option[BotSignature] =
 
   return none(BotSignature)
 
-proc isCommercialCrawler*(ua: string): bool {.inline.} =
+func isCommercialCrawler*(ua: string): bool {.inline.} =
   ## Returns true if `ua` matches a known commercial crawler (Ahrefs, Semrush, etc.).
   detectCommercialCrawler(ua).isSome
 
@@ -234,7 +234,7 @@ proc isCommercialCrawler*(ua: string): bool {.inline.} =
 # Item 03 Procs: Offensive Scanner & Exploit Tool Detection
 # ==============================================================================
 
-proc detectOffensiveScanner*(ua: string): Option[string] =
+func detectOffensiveScanner*(ua: string): Option[string] =
   ## Checks if the User-Agent contains signatures of offensive security tools,
   ## vulnerability scanners, fuzzers, or attack suites.
   ## Returns some(scannerName) or none(string).
@@ -248,7 +248,7 @@ proc detectOffensiveScanner*(ua: string): Option[string] =
 
   return none(string)
 
-proc isOffensiveScanner*(ua: string): bool {.inline.} =
+func isOffensiveScanner*(ua: string): bool {.inline.} =
   ## Returns true if `ua` identifies an offensive exploit or scanning tool.
   detectOffensiveScanner(ua).isSome
 
@@ -256,7 +256,7 @@ proc isOffensiveScanner*(ua: string): bool {.inline.} =
 # Item 04 Procs: Generic HTTP Library Detection
 # ==============================================================================
 
-proc detectGenericHttpLibrary*(ua: string): Option[string] =
+func detectGenericHttpLibrary*(ua: string): Option[string] =
   ## Checks if the User-Agent identifies a generic programming HTTP client library
   ## (curl, python-requests, Go-http-client, Wget, aiohttp, etc.).
   ## Returns some(libraryIdentifier) or none(string).
@@ -278,7 +278,7 @@ proc detectGenericHttpLibrary*(ua: string): Option[string] =
 
   return none(string)
 
-proc isGenericHttpLibrary*(ua: string): bool {.inline.} =
+func isGenericHttpLibrary*(ua: string): bool {.inline.} =
   ## Returns true if `ua` identifies an automated programming library.
   detectGenericHttpLibrary(ua).isSome
 
@@ -286,7 +286,7 @@ proc isGenericHttpLibrary*(ua: string): bool {.inline.} =
 # Item 05 Procs: User-Agent Anomaly Detection
 # ==============================================================================
 
-proc extractChromeMajorVersion(uaLower: string): int =
+func extractChromeMajorVersion(uaLower: string): int =
   ## Extracts the integer major version from a "chrome/XX.X.X.X" token in uaLower.
   ## Returns -1 if not found or unparseable.
   let idx = uaLower.find("chrome/")
@@ -299,7 +299,7 @@ proc extractChromeMajorVersion(uaLower: string): int =
     return ver
   return -1
 
-proc detectUserAgentAnomalies*(ua: string): set[UserAgentAnomaly] =
+func detectUserAgentAnomalies*(ua: string): set[UserAgentAnomaly] =
   ## Evaluates the User-Agent for evasion indicators, forging patterns, and anomalies:
   ## 1. AnomalyEmpty: Empty, whitespace-only, or "-"
   ## 2. AnomalySingleWord: Single bare word lacking Product/Version or structure
@@ -354,7 +354,7 @@ proc detectUserAgentAnomalies*(ua: string): set[UserAgentAnomaly] =
     # Bare "Mozilla/5.0" with no platform or browser token
     result.incl(AnomalyMissingBrowserTokens)
 
-proc isUserAgentAnomalous*(ua: string): bool {.inline.} =
+func isUserAgentAnomalous*(ua: string): bool {.inline.} =
   ## Returns true if `ua` triggers one or more anomaly flags.
   detectUserAgentAnomalies(ua).len > 0
 
@@ -362,7 +362,7 @@ proc isUserAgentAnomalous*(ua: string): bool {.inline.} =
 # Comprehensive User-Agent Classifier
 # ==============================================================================
 
-proc classifyUserAgent*(ua: string): UserAgentClassification =
+func classifyUserAgent*(ua: string): UserAgentClassification =
   ## Performs end-to-end classification of a User-Agent string, synthesizing:
   ## - Intent category (`ActorCategory`)
   ## - Triggered `ThreatFlag` set

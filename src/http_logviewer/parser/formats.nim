@@ -5,7 +5,7 @@ import std/[parseutils, strutils, times, options, json, unicode]
 import ../core/[types, config]
 export config.LogFormat
 
-proc sanitizeUtf8*(s: string, replacement: string = "\uFFFD"): string =
+func sanitizeUtf8*(s: string, replacement: string = "\uFFFD"): string =
   ## Validates UTF-8 encoding and replaces invalid or truncated byte sequences
   ## with `replacement` (defaults to Unicode replacement character \uFFFD).
   ## Returns `s` directly if string is already valid UTF-8.
@@ -72,7 +72,7 @@ proc sanitizeUtf8*(s: string, replacement: string = "\uFFFD"): string =
       result.add(replacement)
       inc(i)
 
-proc sanitizeControlChars*(s: string): string =
+func sanitizeControlChars*(s: string): string =
   ## Sanitizes non-printable and dangerous control characters (e.g. \0, \x1B, control chars < 0x20)
   ## by converting them to safe escape representations (e.g. \0 -> "\\0", \x1b -> "\\e").
   ## Preserves standard horizontal tabs (\t).
@@ -101,13 +101,13 @@ proc sanitizeControlChars*(s: string): string =
     else:
       result.add(c)
 
-proc sanitizeField*(s: string): string =
+func sanitizeField*(s: string): string =
   ## Combines UTF-8 sanitization and control character sanitization.
   ## Ensures paths, User-Agents, and headers can never crash string handlers,
   ## truncate at null bytes, or inject ANSI control codes into terminal displays.
   sanitizeControlChars(sanitizeUtf8(s))
 
-proc isIpv4Address*(ip: string): bool =
+func isIpv4Address*(ip: string): bool =
   ## Returns true if `ip` is a valid IPv4 address in dotted-decimal format (a.b.c.d).
   if ip.len < 7 or ip.len > 15:
     return false
@@ -130,7 +130,7 @@ proc isIpv4Address*(ip: string): bool =
     return false
   return true
 
-proc isIpv6Address*(ip: string): bool =
+func isIpv6Address*(ip: string): bool =
   ## Returns true if `ip` is a syntactically valid IPv6 address.
   let s = ip.strip()
   if s.len < 2 or s.count(':') < 2:
@@ -140,11 +140,11 @@ proc isIpv6Address*(ip: string): bool =
       return false
   return true
 
-proc isValidIpAddress*(ip: string): bool =
+func isValidIpAddress*(ip: string): bool =
   ## Returns true if `ip` is a valid IPv4 or IPv6 address.
   isIpv4Address(ip) or isIpv6Address(ip)
 
-proc cleanIpAddress*(rawIp: string): string =
+func cleanIpAddress*(rawIp: string): string =
   ## Strips port suffixes, bracket enclosures, quotes, zone indices (%eth0),
   ## and trims whitespace from IPv4 and IPv6 addresses.
   ## Handles comma-separated proxy chains (extracting the leftmost client IP).
@@ -447,12 +447,12 @@ func statusDescription*(code: int): string =
     of StatusServerError: "Server Error"
     of StatusInvalid: "Unknown Status"
 
-proc parseHttpMethodToken*(token: string): HttpMethod =
+func parseHttpMethodToken*(token: string): HttpMethod =
   ## Parses an HTTP method token from string or slice, stripping whitespace and quotes.
   let s = token.strip(chars = {' ', '\t', '"', '\''})
   parseHttpMethod(s)
 
-proc parseStatusCode*(s: string, code: var int): bool =
+func parseStatusCode*(s: string, code: var int): bool =
   ## Parses a 3-digit HTTP status code from string, stripping surrounding quotes or spaces.
   ## Returns true if valid integer within 100..599.
   let clean = s.strip(chars = {' ', '\t', '"', '\''})
@@ -465,14 +465,14 @@ proc parseStatusCode*(s: string, code: var int): bool =
     return true
   return false
 
-proc parseStatusCode*(s: string): int =
+func parseStatusCode*(s: string): int =
   ## Convenience parser returning 0 if parsing fails.
   var code: int
   if parseStatusCode(s, code):
     return code
   return 0
 
-proc parseQuotedString*(line: string, idx: var int, outStr: var string): bool =
+func parseQuotedString*(line: string, idx: var int, outStr: var string): bool =
   ## Parses a quoted string starting at or after idx, handling backslash-escapes.
   ## Advances idx past the closing quote. Returns true on success, false if opening/closing quote is missing.
   idx += skipUntil(line, '"', idx)
@@ -498,7 +498,7 @@ proc parseQuotedString*(line: string, idx: var int, outStr: var string): bool =
       inc(idx)
   return false # Missing closing quote
 
-proc isRequestClosingQuote(line: string, quoteIdx: int): bool =
+func isRequestClosingQuote(line: string, quoteIdx: int): bool =
   ## Checks if quoteIdx is followed by whitespace and a valid 3-digit HTTP status code.
   var p = quoteIdx + 1
   while p < line.len and line[p] in {' ', '\t'}:
@@ -509,7 +509,7 @@ proc isRequestClosingQuote(line: string, quoteIdx: int): bool =
         return true
   return false
 
-proc parseRequestQuotedString*(line: string, idx: var int, outStr: var string): bool =
+func parseRequestQuotedString*(line: string, idx: var int, outStr: var string): bool =
   ## Parses the quoted HTTP request line, handling escaped quotes (\") as well as
   ## unescaped interior quotes (e.g. "GET /search?q="test" HTTP/1.1") by looking ahead
   ## for the true closing quote that precedes the HTTP status code.
@@ -541,7 +541,7 @@ proc parseRequestQuotedString*(line: string, idx: var int, outStr: var string): 
       inc(idx)
   return false
 
-proc parseRefererQuotedString*(line: string, idx: var int, outStr: var string): bool =
+func parseRefererQuotedString*(line: string, idx: var int, outStr: var string): bool =
   ## Parses the quoted Referer field, distinguishing interior quotes from closing quotes
   ## followed by whitespace and opening quote of User-Agent.
   idx += skipUntil(line, '"', idx)
@@ -574,7 +574,7 @@ proc parseRefererQuotedString*(line: string, idx: var int, outStr: var string): 
       inc(idx)
   return false
 
-proc parseUserAgentQuotedString*(line: string, idx: var int, outStr: var string): bool =
+func parseUserAgentQuotedString*(line: string, idx: var int, outStr: var string): bool =
   ## Parses the quoted User-Agent field, treating any quote as an interior quote if there
   ## is a subsequent closing quote on the line.
   idx += skipUntil(line, '"', idx)
@@ -802,7 +802,7 @@ proc parseNginxLine*(line: string): Option[HttpLogEntry] {.inline.} =
   ## Parses an Nginx log line returning ``Option[HttpLogEntry]``.
   parseCombinedLine(line)
 
-proc detectLogFormatLine*(line: string): LogFormat =
+func detectLogFormatLine*(line: string): LogFormat =
   ## Analyzes a single log line to heuristically identify its format.
   ## Detects JSON (leading/trailing braces), Combined format (>= 4 quote marks),
   ## or CLF (fewer quotes, standard structure).
@@ -823,7 +823,7 @@ proc detectLogFormatLine*(line: string): LogFormat =
   else:
     return LogFormatClf
 
-proc detectLogFormat*(sampleLines: openArray[string]): LogFormat =
+func detectLogFormat*(sampleLines: openArray[string]): LogFormat =
   ## Analyzes up to 5 non-empty lines from the input to heuristically detect the log format.
   ## Implements Spec 02 heuristic:
   ## - If lines are JSON, selects LogFormatJson.
@@ -859,7 +859,7 @@ proc detectLogFormat*(sampleLines: openArray[string]): LogFormat =
   else:
     return LogFormatCombined
 
-proc detectLogFormat*(sampleText: string): LogFormat =
+func detectLogFormat*(sampleText: string): LogFormat =
   ## Overload of detectLogFormat accepting a multi-line string or single line.
   if sampleText.contains('\n'):
     var lines: seq[string] = @[]
@@ -872,7 +872,7 @@ proc detectLogFormat*(sampleText: string): LogFormat =
   else:
     return detectLogFormatLine(sampleText)
 
-proc getJsonString(node: JsonNode, keys: openArray[string]): string =
+func getJsonString(node: JsonNode, keys: openArray[string]): string =
   for k in keys:
     if node.hasKey(k):
       let val = node[k]
@@ -882,7 +882,7 @@ proc getJsonString(node: JsonNode, keys: openArray[string]): string =
         return $val.getInt()
   return ""
 
-proc escapeJsonControlChars(s: string): string =
+func escapeJsonControlChars(s: string): string =
   result = newStringOfCap(s.len + 16)
   var inString = false
   var inEscape = false

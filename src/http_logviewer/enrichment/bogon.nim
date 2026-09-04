@@ -24,7 +24,7 @@ type
 # IP Address Parsing Utilities
 # ==============================================================================
 
-proc stripIpv4MappedPrefix*(ip: string): string =
+func stripIpv4MappedPrefix*(ip: string): string =
   ## Strips IPv4-mapped IPv6 prefix "::ffff:" if present.
   ## Example: "::ffff:192.168.1.1" -> "192.168.1.1".
   let s = ip.strip()
@@ -39,7 +39,7 @@ proc stripIpv4MappedPrefix*(ip: string): string =
       return inner
   return s
 
-proc parseIpv4Octets*(ip: string, octets: var array[4, int]): bool =
+func parseIpv4Octets*(ip: string, octets: var array[4, int]): bool =
   ## Parses standard IPv4 decimal dotted quad "A.B.C.D". Returns false if malformed.
   let cleaned = stripIpv4MappedPrefix(ip)
   var idx = 0
@@ -56,7 +56,7 @@ proc parseIpv4Octets*(ip: string, octets: var array[4, int]): bool =
       inc idx
   return idx == cleaned.len
 
-proc parseIpv4ToUint32*(ip: string, ipNum: var uint32): bool =
+func parseIpv4ToUint32*(ip: string, ipNum: var uint32): bool =
   ## Converts an IPv4 string into a big-endian uint32.
   ## Handles IPv4-mapped IPv6 addresses (e.g. "::ffff:192.168.1.1").
   var octets: array[4, int]
@@ -68,7 +68,7 @@ proc parseIpv4ToUint32*(ip: string, ipNum: var uint32): bool =
           uint32(octets[3])
   return true
 
-proc parseIpv6ToBytes*(ip: string, bytes: var array[16, byte]): bool =
+func parseIpv6ToBytes*(ip: string, bytes: var array[16, byte]): bool =
   ## Parses standard IPv6 hex representations including "::" shorthand.
   ## Also handles bracketed notations like `"[2001:db8::1]"`.
   var raw = ip.strip()
@@ -147,7 +147,7 @@ proc parseIpv6ToBytes*(ip: string, bytes: var array[16, byte]): bool =
 # Subnet & Topology Predicates
 # ==============================================================================
 
-proc isRfc1918Private*(ip: string): bool =
+func isRfc1918Private*(ip: string): bool =
   ## Checks whether the given IP address falls within the RFC 1918 private IPv4 ranges:
   ## - 10.0.0.0/8     (10.0.0.0 - 10.255.255.255)
   ## - 172.16.0.0/12  (172.16.0.0 - 172.31.255.255)
@@ -169,11 +169,11 @@ proc isRfc1918Private*(ip: string): bool =
 
   return false
 
-proc isRfc1918Ip*(ip: string): bool {.inline.} =
+func isRfc1918Ip*(ip: string): bool {.inline.} =
   ## Alias for `isRfc1918Private`.
   isRfc1918Private(ip)
 
-proc isLoopbackIp*(ip: string): bool =
+func isLoopbackIp*(ip: string): bool =
   ## Checks whether the given IP address is a loopback address:
   ## - 127.0.0.0/8 IPv4 loopback (RFC 1122)
   ## - ::1 IPv6 loopback (RFC 4291)
@@ -200,7 +200,7 @@ proc isLoopbackIp*(ip: string): bool =
 
   return false
 
-proc isLinkLocalIp*(ip: string): bool =
+func isLinkLocalIp*(ip: string): bool =
   ## Checks whether the given IP address is a link-local address:
   ## - 169.254.0.0/16 IPv4 link-local (RFC 3927)
   ## - fe80::/10 IPv6 link-local unicast (RFC 4291)
@@ -215,7 +215,7 @@ proc isLinkLocalIp*(ip: string): bool =
 
   return false
 
-proc isUniqueLocalIp*(ip: string): bool =
+func isUniqueLocalIp*(ip: string): bool =
   ## Checks whether the given IPv6 address is a Unique Local Address (ULA):
   ## - fc00::/7 (RFC 4193, covers fc00::/8 and fd00::/8)
   var v6Bytes: array[16, byte]
@@ -223,7 +223,7 @@ proc isUniqueLocalIp*(ip: string): bool =
     return (v6Bytes[0] and 0xFE'u8) == 0xFC'u8
   return false
 
-proc isCgnatIp*(ip: string): bool =
+func isCgnatIp*(ip: string): bool =
   ## Checks whether the given IP address belongs to Carrier-Grade NAT (CGNAT) / Shared Address Space:
   ## - 100.64.0.0/10 (RFC 6598, 100.64.0.0 - 100.127.255.255)
   var ipNum: uint32
@@ -231,7 +231,7 @@ proc isCgnatIp*(ip: string): bool =
     return (ipNum and 0xFFC00000'u32) == 0x64400000'u32
   return false
 
-proc isMulticastIp*(ip: string): bool =
+func isMulticastIp*(ip: string): bool =
   ## Checks whether the given IP address is a multicast address:
   ## - 224.0.0.0/4 IPv4 multicast (RFC 5771)
   ## - ff00::/8 IPv6 multicast (RFC 4291)
@@ -245,7 +245,7 @@ proc isMulticastIp*(ip: string): bool =
 
   return false
 
-proc isDocumentationIp*(ip: string): bool =
+func isDocumentationIp*(ip: string): bool =
   ## Checks whether the given IP address is allocated for documentation or testing (RFC 5737, RFC 3849):
   ## - 192.0.2.0/24 (TEST-NET-1)
   ## - 198.51.100.0/24 (TEST-NET-2)
@@ -269,7 +269,7 @@ proc isDocumentationIp*(ip: string): bool =
 
   return false
 
-proc isBogonIp*(ip: string): bool =
+func isBogonIp*(ip: string): bool =
   ## Checks whether the given IP address is a bogon, reserved, or unroutable address:
   ## Includes current network (0.0.0.0/8), broadcast (255.255.255.255), reserved (240.0.0.0/4),
   ## documentation networks (TEST-NET-1/2/3, 2001:db8::/32), benchmarking (198.18.0.0/15, 2001:2::/48),
@@ -323,7 +323,7 @@ proc isBogonIp*(ip: string): bool =
 
   return false
 
-proc isPrivateIp*(ip: string): bool =
+func isPrivateIp*(ip: string): bool =
   ## Returns true if the IP belongs to RFC 1918 private ranges, Loopback, Link-Local,
   ## Carrier-Grade NAT (CGNAT), IPv6 Unique Local (ULA), Multicast, Broadcast, or Bogon reserved subnets.
   let cleaned = ip.strip()
@@ -363,7 +363,7 @@ proc isPrivateIp*(ip: string): bool =
 # Comprehensive IP Subnet Classifier
 # ==============================================================================
 
-proc classifyIpSubnet*(ip: string): IpSubnetKind =
+func classifyIpSubnet*(ip: string): IpSubnetKind =
   ## Classifies an IP address into its architectural subnet allocation kind.
   let cleaned = ip.strip()
   if cleaned.len == 0:
@@ -400,7 +400,7 @@ proc classifyIpSubnet*(ip: string): IpSubnetKind =
 
   return SubnetPublic
 
-proc subnetDescription*(kind: IpSubnetKind): string =
+func subnetDescription*(kind: IpSubnetKind): string =
   ## Returns human-readable description for an IP subnet kind.
   case kind
   of SubnetPublic: "Public Internet"
@@ -415,7 +415,7 @@ proc subnetDescription*(kind: IpSubnetKind): string =
   of SubnetBogonReserved: "Reserved / Bogon Range"
   of SubnetInvalid: "Invalid IP Address"
 
-proc makePrivateLocation*(ip: string): GeoLocation =
+func makePrivateLocation*(ip: string): GeoLocation =
   ## Returns standard GeoLocation representing a private, local, or loopback IP.
   ## Displays distinct icon `🏠` and `Local / Private LAN` description as specified in Phase 03.
   initGeoLocation(
@@ -426,7 +426,7 @@ proc makePrivateLocation*(ip: string): GeoLocation =
     isPrivate = true
   )
 
-proc makeUnknownLocation*(ip: string): GeoLocation =
+func makeUnknownLocation*(ip: string): GeoLocation =
   ## Returns standard GeoLocation for unmapped or unknown public IPs.
   initGeoLocation(
     ip = ip,
@@ -436,7 +436,7 @@ proc makeUnknownLocation*(ip: string): GeoLocation =
     isPrivate = false
   )
 
-proc formatPrivateIpBadge*(ip: string, useEmoji: bool = true): string =
+func formatPrivateIpBadge*(ip: string, useEmoji: bool = true): string =
   ## Formats a private IP into a distinct marker badge suitable for terminal display.
   ## Example: "🏠 Local / Private LAN" or `"[LAN] Local / Private LAN"`.
   if useEmoji:
@@ -444,7 +444,7 @@ proc formatPrivateIpBadge*(ip: string, useEmoji: bool = true): string =
   else:
     "[LAN] Local / Private LAN"
 
-proc formatLocalTrafficMarker*(ip: string, useEmoji: bool = true, detailed: bool = false): string =
+func formatLocalTrafficMarker*(ip: string, useEmoji: bool = true, detailed: bool = false): string =
   ## Formats a distinct marker and icon for local/internal traffic.
   ## Standard marker: "🏠 Local / Private LAN" (or `"[LAN] Local / Private LAN"`).
   ## Detailed marker: "🏠 Local / Private LAN (RFC 1918 Private LAN)".
@@ -455,7 +455,7 @@ proc formatLocalTrafficMarker*(ip: string, useEmoji: bool = true, detailed: bool
   else:
     icon & "Local / Private LAN"
 
-proc makeEnrichedPrivateLocation*(ip: string): GeoLocation =
+func makeEnrichedPrivateLocation*(ip: string): GeoLocation =
   ## Returns standard GeoLocation representing a private, local, or loopback IP,
   ## annotating the specific subnet kind in the city field.
   let kind = classifyIpSubnet(ip)

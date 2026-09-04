@@ -8,7 +8,7 @@ TERMINAL_GIF_RECORDER="/home/joa/Code/skills/terminal-gif-recorder/"
 
 while grep -q '\[ \]' "$PLAN_FILE"; do
   echo "--- Starting work on next category via agy ---"
-  agy --dangerously-skip-permissions --mode accept-edits --print-timeout 30m -p "Use \"$NIM_TECH_SKILL\" skill for building the program.
+  agy --dangerously-skip-permissions --mode accept-edits --print-timeout 60m -p "Use \"$NIM_TECH_SKILL\" skill for building the program.
     Use \"$README_SKILL\" skill for creating the README.md file.
     Read \"$PLAN_FILE\". Execute only the first incomplete category:
     Work according to the specifications in the specs/ folder. Only deviate if absolutely necessary, and make a note of it.

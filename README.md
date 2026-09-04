@@ -99,6 +99,7 @@ High-performance HTTP log viewer and rogue bot detector written in Nim. `http_lo
   - [CLI Options & Argument Parser](#19-cli-options--argument-parser)
   - [Public Library API & Programmatic Consumption](#20-public-library-api--programmatic-consumption)
   - [End-to-End Pipeline & Sample Log Fixtures](#21-end-to-end-pipeline--sample-log-fixtures)
+  - [Idiomatic Nim & Architectural Integrity](#22-idiomatic-nim--architectural-integrity)
 - [Examples](#examples)
 - [Development and Documentation](#development-and-documentation)
 - [Attribution and License](#attribution-and-license)
@@ -162,6 +163,7 @@ The library exposes clean, type-safe Nim APIs organized into modular layers:
 | [CLI Options & Argument Parser](#19-cli-options--argument-parser) | `http_logviewer/cli/args` | `parseCommandLine`, `parseCommandLineArgs`, `validateInputPath`, `loadViewerConfigToml`, `helpText`, `versionText` | Complete CLI option parser, TOML/JSON configuration loading, exit code handling, and usage documentation |
 | [Public Library API & Programmatic Consumption](#20-public-library-api--programmatic-consumption) | `http_logviewer` | `parseLine`, `enrichGeo`, `enrichWithGeo`, `analyzeEntry`, `analyzeRequest`, `correlateStream`, `correlateEvent`, `enrichAndAnalyze` | Clean top-level library API for embedding into third-party Nim applications with zero global mutable state and full thread-safety |
 | [End-to-End Pipeline & Fixtures](#21-end-to-end-pipeline--sample-log-fixtures) | `tests/fixtures/`, `http_logviewer` | `combined.log`, `attacks.log`, `distributed_botnet.log`, `formatStatusCode`, `renderStreamLine` | End-to-end pipeline verification across sample fixtures, zero false positive genuine traffic, OWASP attack classification, background red 404 badges, and multi-IP botnet correlation |
+| [Idiomatic Nim & Architecture](#22-idiomatic-nim--architectural-integrity) | `http_logviewer`, `http_logviewer/core/*` | `func` vs `proc`, `CatchableError`, immutable `let` bindings, acyclic DAG | Side-effect-free pure functions, parameter immutability, acyclic layered architecture, and robust typed exception handling |
 | Error Hierarchy | `http_logviewer/core/errors` | `HttpLogViewerError`, `ParseError`, `ThreatAnalysisError`, `ConfigError` | Robust exception hierarchy derived from `CatchableError` |
 
 ---
@@ -1273,10 +1275,66 @@ nim r --path:src examples/end_to_end_pipeline.nim
 
 ---
 
+### 22. Idiomatic Nim & Architectural Integrity
+
+Comprehensive architectural integrity review and adherence to modern Nim 2.2 conventions across all 16 library modules:
+
+- **Pure Functions & Determinism**: All side-effect-free calculations (e.g. `isoToFlagEmoji`, `formatStatusCode`, `stripAnsi`, `normalizeUrl`, `hashQueryNormalizedUrl`, `hashPathSequence`, `jaccardSimilarity`, `analyzeAttackPayload`, `classifyUserAgent`, `evaluateThreat`, `attackDuration`, `calculateClusterMetrics`, `generateFail2banRules`, `generateUfwRules`, `generateIptablesRules`) are declared with `func` rather than `proc`, ensuring compiler-verified side-effect freedom.
+- **Immutability First & Value Objects**: Domain objects (`HttpLogEntry`, `ThreatProfile`, `GeoLocation`, `FilterCriteria`) default to immutable `let` bindings and value semantics. Mutable `var` bindings are restricted strictly to internal parser accumulators, token indices, and stream state trackers.
+- **Strictly Acyclic Module Architecture (DAG)**: The module hierarchy enforces a single-directional dependency flow without circular imports:
+  `core` &rarr; `{parser, enrichment}` &rarr; `analyzer` &rarr; `renderer` &rarr; `cli` &rarr; `http_logviewer.nim`.
+- **Typed Catchable Exception Hierarchy**: All custom domain exceptions (`HttpLogViewerError`, `ParseError`, `ThreatAnalysisError`, `ConfigError`, `GeoIpError`, `RenderError`, `PipelineError`) inherit from `CatchableError`. Untrusted log inputs and malformed payloads are safely handled without unhandled `Defect` crashes.
+- **Self-Documenting Code & Nim Docs**: Top-level module documentation comments (`##`), field descriptions, and routine contracts across all source files compile cleanly into HTML documentation via `nimble docs`.
+- **Modern Nim 2.2 Idioms**: Fully aligned with modern Nim 2.2 idioms, including `std/` prefix imports, duration arithmetic with `initDuration(...)` (replacing deprecated fields), and memory-leak-free execution under ARC/ORC (`--mm:orc`).
+
+```nim
+import std/[options, times]
+import http_logviewer
+import http_logviewer/core/[types, config, errors]
+import http_logviewer/renderer/styles
+
+# 1. Pure function evaluation (compiler-enforced side-effect free)
+let badge = formatStatusCode(404, colorize = false) # Pure func
+let flag = isoToFlagEmoji("DE")                     # Pure func
+
+# 2. Immutable domain records
+let entry = initHttpLogEntry(
+  clientIp = "198.51.100.42",
+  timestamp = parse("2026-09-04T12:00:00+00:00", "yyyy-MM-dd'T'HH:mm:sszzz"),
+  path = "/wp-login.php",
+  `method` = HttpPost,
+  statusCode = 200,
+  userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+)
+let threat = analyzeEntry(entry) # Immutable let binding
+
+# 3. Typed CatchableError exception handling
+try:
+  discard parseOutputFormat("invalid_format")
+except ConfigError as e:
+  echo "Handled configuration error: ", e.msg
+```
+
+#### Terminal Demonstration
+
+The recording below demonstrates pure functions, immutability, layered acyclic architecture, typed exception safety under `CatchableError`, and modern Nim 2.x duration arithmetic:
+
+![Idiomatic Nim & Architectural Integrity](docs/images/idiomatic_nim_and_architecture.gif)
+
+> *Source session recording:* [`docs/recordings/idiomatic_nim_and_architecture.cast`](docs/recordings/idiomatic_nim_and_architecture.cast) *(recorded with Asciinema, rendered via Agg with JetBrainsMono Nerd Font Mono)*.
+
+Compile and run this example:
+```bash
+nim r --path:src examples/idiomatic_nim_and_architecture.nim
+```
+
+---
+
 ## Examples
 
 The `examples/` folder provides executable demonstrations of each pipeline layer:
 
+- [`examples/idiomatic_nim_and_architecture.nim`](examples/idiomatic_nim_and_architecture.nim): Pure functions (func vs proc), parameter immutability, layered acyclic architecture, CatchableError hierarchy, and modern Nim 2.2 idioms.
 - [`examples/end_to_end_pipeline.nim`](examples/end_to_end_pipeline.nim): End-to-end sample fixtures validation, genuine traffic vs. OWASP attack classification, background red 404 badge verification, and multi-IP botnet correlation.
 - [`examples/basic_usage.nim`](examples/basic_usage.nim): Baseline library imports and configuration sanity check.
 - [`examples/log_entry_models.nim`](examples/log_entry_models.nim): Detailed usage of `HttpLogEntry`, `HttpMethod`, stringifiers, and JSON round-tripping.

@@ -131,7 +131,7 @@ func initPipelineMessage*(msg: string, stage: string = "core"): PipelineMessage 
   ## Initializes a new pipeline message.
   PipelineMessage(message: msg, stage: stage)
 
-proc httpMethod*(entry: HttpLogEntry): HttpMethod {.inline.} =
+func httpMethod*(entry: HttpLogEntry): HttpMethod {.inline.} =
   ## Ergonomic getter for `method` avoiding backticks.
   entry.`method`
 
@@ -139,7 +139,7 @@ proc `httpMethod=`*(entry: var HttpLogEntry, m: HttpMethod) {.inline.} =
   ## Ergonomic setter for `method` avoiding backticks.
   entry.`method` = m
 
-proc parseHttpMethod*(s: string): HttpMethod =
+func parseHttpMethod*(s: string): HttpMethod =
   ## Parses a standard or custom HTTP method verb string into an HttpMethod enum.
   ## Matching is case-insensitive. Empty string maps to HttpUnknown; unrecognized non-empty strings map to HttpOther.
   case s.toUpperAscii()
@@ -155,7 +155,7 @@ proc parseHttpMethod*(s: string): HttpMethod =
   of "": HttpUnknown
   else: HttpOther
 
-proc `$`*(m: HttpMethod): string =
+func `$`*(m: HttpMethod): string =
   ## Returns canonical uppercase HTTP verb string.
   case m
   of HttpUnknown: "UNKNOWN"
@@ -170,7 +170,7 @@ proc `$`*(m: HttpMethod): string =
   of HttpTrace: "TRACE"
   of HttpOther: "OTHER"
 
-proc initHttpLogEntry*(
+func initHttpLogEntry*(
   clientIp: string = "",
   timestamp: DateTime = default(DateTime),
   `method`: HttpMethod = HttpUnknown,
@@ -194,14 +194,14 @@ proc initHttpLogEntry*(
     rawLine: rawLine
   )
 
-proc `$`*(entry: HttpLogEntry): string =
+func `$`*(entry: HttpLogEntry): string =
   ## Returns a standardized single-line string representation of the HTTP log entry.
   let tsStr = if not entry.timestamp.isInitialized: "-" else: entry.timestamp.format("yyyy-MM-dd'T'HH:mm:sszzz")
   let refStr = if entry.referer.len > 0: entry.referer else: "-"
   let uaStr = if entry.userAgent.len > 0: entry.userAgent else: "-"
   result = "[" & tsStr & "] " & entry.clientIp & " " & $entry.`method` & " " & entry.path & " " & $entry.statusCode & " " & $entry.bytesSent & " \"" & refStr & "\" \"" & uaStr & "\""
 
-proc pretty*(entry: HttpLogEntry): string =
+func pretty*(entry: HttpLogEntry): string =
   ## Formats the HttpLogEntry as a readable multi-line structured block.
   let tsStr = if not entry.timestamp.isInitialized: "-" else: entry.timestamp.format("yyyy-MM-dd'T'HH:mm:sszzz")
   result = "HttpLogEntry:\n" &
@@ -257,7 +257,7 @@ proc parseHttpLogEntryJson*(n: JsonNode): HttpLogEntry =
     rawLine = raw
   )
 
-proc `==`*(a, b: HttpLogEntry): bool =
+func `==`*(a, b: HttpLogEntry): bool =
   ## Value equality operator for HttpLogEntry.
   a.clientIp == b.clientIp and
     a.timestamp == b.timestamp and
@@ -269,7 +269,7 @@ proc `==`*(a, b: HttpLogEntry): bool =
     a.userAgent == b.userAgent and
     a.rawLine == b.rawLine
 
-proc hash*(entry: HttpLogEntry): Hash =
+func hash*(entry: HttpLogEntry): Hash =
   ## Hash computation enabling HttpLogEntry to be stored in HashSets and Tables.
   var h: Hash = 0
   h = h !& hash(entry.clientIp)
@@ -285,7 +285,7 @@ proc hash*(entry: HttpLogEntry): Hash =
   h = h !& hash(entry.rawLine)
   result = !$h
 
-proc isValid*(entry: HttpLogEntry): bool =
+func isValid*(entry: HttpLogEntry): bool =
   ## Checks if the HttpLogEntry satisfies minimum valid constraints:
   ## non-empty client IP and status code within the standard HTTP range (100..599).
   entry.clientIp.len > 0 and entry.statusCode in 100..599
@@ -301,7 +301,7 @@ proc validate*(entry: HttpLogEntry) =
 # ActorCategory Procedures & Serialization
 # ==============================================================================
 
-proc `$`*(c: ActorCategory): string =
+func `$`*(c: ActorCategory): string =
   ## Returns canonical string representation of an ActorCategory.
   case c
   of CategoryUnknown: "UNKNOWN"
@@ -312,7 +312,7 @@ proc `$`*(c: ActorCategory): string =
   of CategorySuspicious: "SUSPICIOUS"
   of CategoryBadActorHacker: "BAD_ACTOR_HACKER"
 
-proc parseActorCategory*(s: string): ActorCategory =
+func parseActorCategory*(s: string): ActorCategory =
   ## Parses a string token into an ActorCategory enum.
   case s.toUpperAscii()
   of "REALUSER", "REAL_USER", "USER": CategoryRealUser
@@ -324,15 +324,15 @@ proc parseActorCategory*(s: string): ActorCategory =
   of "UNKNOWN", "": CategoryUnknown
   else: CategoryUnknown
 
-proc isBot*(c: ActorCategory): bool {.inline.} =
+func isBot*(c: ActorCategory): bool {.inline.} =
   ## Returns true if the category represents a recognized bot or crawler.
   c in {CategoryVerifiedBot, CategoryFriendlyCrawler, CategoryCommercialBot}
 
-proc isHacker*(c: ActorCategory): bool {.inline.} =
+func isHacker*(c: ActorCategory): bool {.inline.} =
   ## Returns true if the category represents a malicious bad actor.
   c == CategoryBadActorHacker
 
-proc isRealUser*(c: ActorCategory): bool {.inline.} =
+func isRealUser*(c: ActorCategory): bool {.inline.} =
   ## Returns true if the category represents a genuine human visitor.
   c == CategoryRealUser
 
@@ -344,7 +344,7 @@ proc `%`*(c: ActorCategory): JsonNode {.inline.} =
 # ThreatFlag Procedures & Serialization
 # ==============================================================================
 
-proc `$`*(flag: ThreatFlag): string =
+func `$`*(flag: ThreatFlag): string =
   ## Returns canonical string representation of a ThreatFlag.
   case flag
   of ThreatSensitiveFile: "SensitiveFileProbe"
@@ -357,7 +357,7 @@ proc `$`*(flag: ThreatFlag): string =
   of ThreatHighRate404: "AggressiveRate"
   of ThreatNoAssetFetch: "NoAssetsRequested"
 
-proc parseThreatFlag*(s: string): ThreatFlag =
+func parseThreatFlag*(s: string): ThreatFlag =
   ## Parses a string representation into a ThreatFlag enum.
   case s.toUpperAscii()
   of "THREATSENSITIVEFILE", "SENSITIVEFILEPROBE", "SENSITIVEFILE": ThreatSensitiveFile
@@ -382,7 +382,7 @@ proc `%`*(flags: set[ThreatFlag]): JsonNode =
 # ThreatProfile Procedures & Serialization
 # ==============================================================================
 
-proc initThreatProfile*(
+func initThreatProfile*(
   score: int = 0,
   category: ActorCategory = CategoryUnknown,
   flags: set[ThreatFlag] = {},
@@ -396,7 +396,7 @@ proc initThreatProfile*(
     matchedSignatures: matchedSignatures
   )
 
-proc matchedRules*(p: ThreatProfile): seq[string] {.inline.} =
+func matchedRules*(p: ThreatProfile): seq[string] {.inline.} =
   ## Ergonomic alias for matchedSignatures.
   p.matchedSignatures
 
@@ -404,19 +404,19 @@ proc `matchedRules=`*(p: var ThreatProfile, rules: seq[string]) {.inline.} =
   ## Ergonomic setter for matchedSignatures.
   p.matchedSignatures = rules
 
-proc isHacker*(p: ThreatProfile): bool {.inline.} =
+func isHacker*(p: ThreatProfile): bool {.inline.} =
   ## Returns true if p.category == CategoryBadActorHacker or p.score >= 50.
   p.category == CategoryBadActorHacker or p.score >= 50
 
-proc isBot*(p: ThreatProfile): bool {.inline.} =
+func isBot*(p: ThreatProfile): bool {.inline.} =
   ## Returns true if category is in {CategoryVerifiedBot, CategoryFriendlyCrawler, CategoryCommercialBot}.
   p.category in {CategoryVerifiedBot, CategoryFriendlyCrawler, CategoryCommercialBot}
 
-proc isSuspicious*(p: ThreatProfile): bool {.inline.} =
+func isSuspicious*(p: ThreatProfile): bool {.inline.} =
   ## Returns true if category is CategorySuspicious or score in 21..49.
   p.category == CategorySuspicious or p.score in 21..49
 
-proc isRealUser*(p: ThreatProfile): bool {.inline.} =
+func isRealUser*(p: ThreatProfile): bool {.inline.} =
   ## Returns true if category is CategoryRealUser and score <= 20.
   p.category == CategoryRealUser and p.score <= 20
 
@@ -425,14 +425,14 @@ proc validate*(p: ThreatProfile) =
   if p.score notin 0..100:
     raise newException(ThreatAnalysisError, "Threat score out of bounds [0..100]: " & $p.score)
 
-proc `==`*(a, b: ThreatProfile): bool =
+func `==`*(a, b: ThreatProfile): bool =
   ## Equality check for ThreatProfile.
   a.score == b.score and
     a.category == b.category and
     a.flags == b.flags and
     a.matchedSignatures == b.matchedSignatures
 
-proc `$`*(p: ThreatProfile): string =
+func `$`*(p: ThreatProfile): string =
   ## Formatted string representation of ThreatProfile.
   result = "ThreatProfile(score: " & $p.score & ", category: " & $p.category & ", flags: {"
   var first = true
@@ -471,7 +471,7 @@ proc parseThreatProfileJson*(n: JsonNode): ThreatProfile =
 # GeoLocation Procedures & Serialization
 # ==============================================================================
 
-proc initGeoLocation*(
+func initGeoLocation*(
   ip: string = "",
   countryCode: string = "",
   countryName: string = "",
@@ -489,7 +489,7 @@ proc initGeoLocation*(
     city: city
   )
 
-proc `$`*(geo: GeoLocation): string =
+func `$`*(geo: GeoLocation): string =
   ## String representation of GeoLocation (e.g. "🇺🇸 US (United States)").
   let flag = if geo.flagEmoji.len > 0: geo.flagEmoji & " " else: ""
   let cc = if geo.countryCode.len > 0: geo.countryCode else: "??"
@@ -497,7 +497,7 @@ proc `$`*(geo: GeoLocation): string =
   let priv = if geo.isPrivate: " [Private/LAN]" else: ""
   flag & cc & name & priv
 
-proc `==`*(a, b: GeoLocation): bool =
+func `==`*(a, b: GeoLocation): bool =
   ## Value equality for GeoLocation.
   a.ip == b.ip and
     a.countryCode == b.countryCode and
@@ -506,7 +506,7 @@ proc `==`*(a, b: GeoLocation): bool =
     a.isPrivate == b.isPrivate and
     a.city == b.city
 
-proc hash*(geo: GeoLocation): Hash =
+func hash*(geo: GeoLocation): Hash =
   ## Hash for GeoLocation.
   var h: Hash = 0
   h = h !& hash(geo.ip)
@@ -681,7 +681,7 @@ proc `%`*(cluster: ActorCluster): JsonNode =
 # EnrichedLogRecord Procedures & Serialization
 # ==============================================================================
 
-proc initEnrichedLogRecord*(
+func initEnrichedLogRecord*(
   entry: HttpLogEntry,
   geo: GeoLocation = initGeoLocation(),
   threat: ThreatProfile = initThreatProfile(),
@@ -695,14 +695,14 @@ proc initEnrichedLogRecord*(
     clusterId: clusterId
   )
 
-proc `$`*(rec: EnrichedLogRecord): string =
+func `$`*(rec: EnrichedLogRecord): string =
   ## Formats EnrichedLogRecord into an enriched single-line representation.
   let geoStr = if rec.geo.countryCode.len > 0: "[" & $rec.geo & "] " else: ""
   let threatStr = "[" & $rec.threat.category & " (score:" & $rec.threat.score & ")] "
   let clusterStr = if rec.clusterId.isSome: "[Cluster:" & rec.clusterId.get() & "] " else: ""
   clusterStr & geoStr & threatStr & $rec.entry
 
-proc `==`*(a, b: EnrichedLogRecord): bool =
+func `==`*(a, b: EnrichedLogRecord): bool =
   ## Value equality operator for EnrichedLogRecord.
   a.entry == b.entry and
     a.geo == b.geo and
