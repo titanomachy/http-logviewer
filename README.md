@@ -93,6 +93,7 @@ High-performance HTTP log viewer and rogue bot detector written in Nim. `http_lo
   - [Actor Fingerprint Synthesis & Multi-IP Correlation](#13-actor-fingerprint-synthesis--multi-ip-correlation)
   - [Multi-IP Probe Sequence Correlation](#14-multi-ip-probe-sequence-correlation)
   - [Subnet, ASN & Temporal Clustering](#15-subnet-asn--temporal-clustering)
+  - [Background-Colored HTTP Status Highlighting](#16-background-colored-http-status-highlighting)
 - [Examples](#examples)
 - [Development and Documentation](#development-and-documentation)
 - [Attribution and License](#attribution-and-license)
@@ -940,6 +941,58 @@ nim r --path:src examples/subnet_asn_temporal_clustering.nim
 
 ---
 
+### 16. Background-Colored HTTP Status Highlighting
+
+High-contrast ANSI styling, terminal color auto-detection, monochromatic fallbacks, visitor intent badges, and visual string width alignment:
+
+- **ANSI Status Code Highlighting (`formatStatusCode`)**: Renders HTTP status codes with high-visibility colored backgrounds:
+  - `404 Not Found`: Bold white on bright red background (`\e[41;97;1m 404 \e[0m`)
+  - `401 / 403 Forbidden`: White on magenta background (`\e[45;97m 403 \e[0m`)
+  - `5xx Server Error`: Bright white on bright red background (`\e[101;97;1m 500 \e[0m`)
+  - `2xx Success`: Black on green background (`\e[42;30m 200 \e[0m`)
+  - `3xx Redirection`: Black on yellow background (`\e[43;30m 301 \e[0m`)
+  - `1xx Informational`: White on blue background (`\e[44;97m 100 \e[0m`)
+- **Terminal Color Auto-Detection (`detectColorSupport`, `shouldColorize`)**: Complies with the `NO_COLOR` standard, inspects `$TERM` for `dumb`/`raw` terminal types, verifies `isatty(stdout)`, and checks Windows Terminal / VT support.
+- **Monochromatic Fallback Mode (`stripAnsi`, `--no-color`)**: Safely strips ANSI escape codes and emits plain-text badges when redirecting to files, pipes, or when `--no-color` is passed.
+- **Visitor Intent Badges (`formatIntentBadge`)**: Color-codes visitor categories for instant visual triage:
+  - `[REAL USER]` in bright green
+  - `[GOOD BOT ]` in cyan
+  - `[SCRAPER  ]` in yellow
+  - `[SUSPICIOUS]` in orange
+  - `[ HACKER! ]` in bold white on red background
+- **Aligned Country Columns (`formatCountryColumn`)**: Formats ISO 3166-1 alpha-2 codes and Unicode flag emojis (e.g., `🇺🇸 US`, `🇩🇪 DE`, `🏠 LO`) into aligned monospace columns, with terminal ASCII fallback support (`[US] US`).
+- **Visual Display Width Calculations (`terminalDisplayWidth`, `alignColumn`)**: Accurately measures terminal column width by ignoring 0-width ANSI sequences and properly calculating 2-column wide Unicode emojis and regional indicator flag pairs.
+
+```nim
+import http_logviewer/renderer/[styles, terminal]
+import http_logviewer/core/types
+
+# 1. Background-colored status code badges
+echo formatStatusCode(404, colorize = true) # "\e[41;97;1m 404 \e[0m"
+echo formatStatusCode(200, colorize = true) # "\e[42;30m 200 \e[0m"
+
+# 2. Intent category badges
+echo formatIntentBadge(CategoryBadActorHacker, colorize = true) # "\e[41;97;1m[ HACKER! ]\e[0m"
+echo formatIntentBadge(CategoryRealUser, colorize = true)       # "\e[32m[REAL USER]\e[0m"
+
+# 3. Aligned country columns with emoji width calculation
+let col = formatCountryColumn("US", "🇺🇸", useEmoji = true, width = 7)
+assert terminalDisplayWidth(col) == 7
+```
+
+The recording below demonstrates high-contrast background-colored status code badges, color auto-detection policies, monochromatic fallbacks, intent badges, and columnar stream line rendering:
+
+![Background-Colored HTTP Status Highlighting](docs/images/status_code_highlighting.gif)
+
+> *Source session recording:* [`docs/recordings/status_code_highlighting.cast`](docs/recordings/status_code_highlighting.cast) *(recorded with Asciinema, rendered via Agg with JetBrainsMono Nerd Font Mono)*.
+
+Compile and run this example:
+```bash
+nim r --path:src examples/status_code_highlighting.nim
+```
+
+---
+
 ## Examples
 
 The `examples/` folder provides executable demonstrations of each pipeline layer:
@@ -960,6 +1013,7 @@ The `examples/` folder provides executable demonstrations of each pipeline layer
 - [`examples/actor_fingerprint_synthesis.nim`](examples/actor_fingerprint_synthesis.nim): Actor fingerprint synthesis, User-Agent normalization, path sequence hashing, cache-buster stripping, Jaccard similarity, and multi-IP botnet correlation.
 - [`examples/multi_ip_probe_correlation.nim`](examples/multi_ip_probe_correlation.nim): Multi-IP probe sequence correlation, sliding time window tracking, residential proxy rotation detection, dynamic `ActorClusterTable` linking, and cluster risk metrics.
 - [`examples/subnet_asn_temporal_clustering.nim`](examples/subnet_asn_temporal_clustering.nim): Subnet CIDR math & grouping (/24 IPv4 and /64 IPv6), hosting provider/datacenter IP identification, synchronized burst request detection, and human-readable cluster tags.
+- [`examples/status_code_highlighting.nim`](examples/status_code_highlighting.nim): Background-colored HTTP status code badges (404, 5xx, 2xx, 3xx), terminal color auto-detection, monochromatic fallbacks, visitor intent badges, and monospace visual width alignment.
 - [`examples/pipeline_scaffolding.nim`](examples/pipeline_scaffolding.nim): Cross-module pipeline event envelope demonstration.
 
 ---

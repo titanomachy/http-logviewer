@@ -16,4 +16,5 @@ import t_signatures
 import t_useragents
 import t_classifier
 import t_correlator
+import t_renderer
 import test1
