@@ -94,6 +94,7 @@ High-performance HTTP log viewer and rogue bot detector written in Nim. `http_lo
   - [Multi-IP Probe Sequence Correlation](#14-multi-ip-probe-sequence-correlation)
   - [Subnet, ASN & Temporal Clustering](#15-subnet-asn--temporal-clustering)
   - [Background-Colored HTTP Status Highlighting](#16-background-colored-http-status-highlighting)
+  - [Streaming Log Output & Formatted Tables](#17-streaming-log-output--formatted-tables)
 - [Examples](#examples)
 - [Development and Documentation](#development-and-documentation)
 - [Attribution and License](#attribution-and-license)
@@ -991,6 +992,61 @@ Compile and run this example:
 nim r --path:src examples/status_code_highlighting.nim
 ```
 
+### 17. Streaming Log Output & Formatted Tables
+
+The streaming table and presentation engine formats live enriched log records into an aligned 7-column terminal view, dynamically balancing display space according to terminal dimensions:
+
+- **Standardized Columnar Stream View (`renderStreamHeader`, `renderStreamSeparator`, `renderStreamLine`)**: Formats each record into seven structured columns:
+  `[TIMESTAMP]  [FLAG+CC]  [STATUS_BADGE]  [INTENT]  [CLIENT_IP]  [METHOD PATH]  [USER_AGENT]`
+- **Adaptive Viewport Truncation & Path Shortening (`getEffectiveTerminalWidth`, `shortenPath`, `truncateText`, `truncateAnsi`)**: Automatically detects terminal width and adapts layout:
+  - Narrow displays (<85 cols): Suppresses User-Agent to prioritize request path and threat indicators.
+  - Standard displays (120 cols): Dynamically budgets path length and User-Agent width.
+  - Wide displays (160+ cols): Preserves full URI endpoints and User-Agent strings.
+  - Middle-ellipsis path shortening (`/root/.../file`) preserves directory structure and resource targets.
+  - ANSI-aware truncation (`truncateAnsi`) bounds strings without corrupting escape sequences.
+- **Live Status Ticker & Session Summary Banner (`StatusTicker`, `renderTicker`, `renderSummaryBanner`)**: Real-time traffic accumulator tracking lines parsed, unique client IPs, visitor category distribution, top targeted exploit endpoints, and HTTP status counts. Emits compact single-line tickers and multi-line structured session summaries.
+- **Suspicious URI Parameter Highlighting & Tampering Diffing (`highlightSuspiciousUri`, `highlightUriDiff`)**: Detects OWASP Top 10 injection payloads (SQLi, path traversal, RCE, Log4j, sensitive configuration files) and renders exploit parameters in high-contrast bold red badges (`BgRedBold`). Provides query diffing to highlight newly added (`+key=val`) or modified query parameters.
+- **JSON Output Mode & SIEM Ingestion (`renderJsonRecord`, `renderJsonStreamLine`, `renderJsonBatch`)**: Serializes enriched log records to newline-delimited JSON (NDJSON) or pretty-printed JSON for streaming pipelines into `jq`, Logstash, Elasticsearch, Vector, or SIEM platforms.
+
+```nim
+import http_logviewer/renderer/terminal
+import http_logviewer/core/types
+
+# 1. Configurable streaming options
+let opts = StreamFormatOptions(
+  colorize: true,
+  useEmoji: true,
+  includeUserAgent: true,
+  maxWidth: 120,
+  highlightSuspicious: true
+)
+
+# 2. Render table header and stream line
+echo renderStreamHeader(opts)
+echo renderStreamSeparator(opts)
+echo renderStreamLine(enrichedRecord, opts)
+
+# 3. Live status ticker and summary banner
+var ticker = initStatusTicker()
+ticker.record(enrichedRecord)
+echo renderTicker(ticker, colorize = true, maxWidth = 120)
+echo renderSummaryBanner(ticker, colorize = true, width = 80)
+
+# 4. JSON / NDJSON emission
+echo renderJsonStreamLine(enrichedRecord)
+```
+
+The recording below demonstrates formatted stream lines with status badges and flags, responsive 80-col and 120-col layouts, live status tickers, suspicious URI highlighting, query tampering diffs, and NDJSON serialization:
+
+![Streaming Log Output & Formatted Tables](docs/images/streaming_terminal_ui.gif)
+
+> *Source session recording:* [`docs/recordings/streaming_terminal_ui.cast`](docs/recordings/streaming_terminal_ui.cast) *(recorded with Asciinema, rendered via Agg with JetBrainsMono Nerd Font Mono)*.
+
+Compile and run this example:
+```bash
+nim r --path:src examples/streaming_terminal_ui.nim
+```
+
 ---
 
 ## Examples
@@ -1014,6 +1070,7 @@ The `examples/` folder provides executable demonstrations of each pipeline layer
 - [`examples/multi_ip_probe_correlation.nim`](examples/multi_ip_probe_correlation.nim): Multi-IP probe sequence correlation, sliding time window tracking, residential proxy rotation detection, dynamic `ActorClusterTable` linking, and cluster risk metrics.
 - [`examples/subnet_asn_temporal_clustering.nim`](examples/subnet_asn_temporal_clustering.nim): Subnet CIDR math & grouping (/24 IPv4 and /64 IPv6), hosting provider/datacenter IP identification, synchronized burst request detection, and human-readable cluster tags.
 - [`examples/status_code_highlighting.nim`](examples/status_code_highlighting.nim): Background-colored HTTP status code badges (404, 5xx, 2xx, 3xx), terminal color auto-detection, monochromatic fallbacks, visitor intent badges, and monospace visual width alignment.
+- [`examples/streaming_terminal_ui.nim`](examples/streaming_terminal_ui.nim): Streaming log output, formatted tables, adaptive width truncation, status ticker, URI highlighting, and JSON emission.
 - [`examples/pipeline_scaffolding.nim`](examples/pipeline_scaffolding.nim): Cross-module pipeline event envelope demonstration.
 
 ---

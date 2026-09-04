@@ -30,6 +30,7 @@ const
   FgBrightMagenta* = "\e[95m"
   FgBrightCyan*  = "\e[96m"
   FgBrightWhite* = "\e[97m"
+  FgBrightRedBold* = "\e[91;1m"
   FgOrange*      = "\e[38;5;208m"
 
   # HTTP Status Code Background Colors (per Spec 06 / Phase 06)
@@ -184,11 +185,11 @@ proc formatIntentBadge*(threat: ThreatProfile, colorize: bool = true): string {.
   ## Convenience overload extracting category from ThreatProfile.
   formatIntentBadge(threat.category, colorize)
 
-func isRegionalIndicatorRune(r: Rune): bool {.inline.} =
+func isRegionalIndicatorRune*(r: Rune): bool {.inline.} =
   ## Returns true if the rune is a Unicode Regional Indicator Symbol (0x1F1E6..0x1F1FF).
   int(r) in 0x1F1E6..0x1F1FF
 
-func isEmojiRune(r: Rune): bool {.inline.} =
+func isEmojiRune*(r: Rune): bool {.inline.} =
   ## Returns true if rune is in common emoji Unicode ranges.
   let cp = int(r)
   (cp in 0x1F300..0x1F9FF) or (cp in 0x2600..0x26FF) or (cp in 0x2700..0x27BF) or (cp in 0x1FA00..0x1FAFF)
