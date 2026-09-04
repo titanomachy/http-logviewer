@@ -749,14 +749,10 @@ proc renderGroupedSummaryTable*(
 # Actor Cluster Card Display (Phase 06 / Category C / Item 02)
 # ==============================================================================
 
-var gDefaultCidrProvider: CidrGeoIpProvider = nil
-
 proc resolveGeoProvider(provider: GeoIpProvider): GeoIpProvider =
   if provider != nil:
     return provider
-  if gDefaultCidrProvider == nil:
-    gDefaultCidrProvider = newCidrGeoIpProvider()
-  gDefaultCidrProvider
+  newCidrGeoIpProvider()
 
 proc renderActorClusterCard*(
   cluster: ActorCluster,

@@ -18,4 +18,5 @@ import t_classifier
 import t_correlator
 import t_renderer
 import t_cli_args
+import t_library_api
 import test1

@@ -97,6 +97,7 @@ High-performance HTTP log viewer and rogue bot detector written in Nim. `http_lo
   - [Streaming Log Output & Formatted Tables](#17-streaming-log-output--formatted-tables)
   - [Grouped Actor View & Anomaly Drill-down](#18-grouped-actor-view--anomaly-drill-down)
   - [CLI Options & Argument Parser](#19-cli-options--argument-parser)
+  - [Public Library API & Programmatic Consumption](#20-public-library-api--programmatic-consumption)
 - [Examples](#examples)
 - [Development and Documentation](#development-and-documentation)
 - [Attribution and License](#attribution-and-license)
@@ -157,6 +158,8 @@ The library exposes clean, type-safe Nim APIs organized into modular layers:
 | [HTTP Status Highlighting](#16-background-colored-http-status-highlighting) | `http_logviewer/renderer/styles` | `formatStatusCode`, `formatIntentBadge`, `formatCountryColumn`, `terminalDisplayWidth`, `alignColumn`, `detectColorSupport`, `shouldColorize`, `stripAnsi` | High-contrast background badges (404, 5xx, 2xx, 3xx), color auto-detection policies (NO_COLOR, dumb), monochromatic fallback, intent badges, and visual width alignment |
 | [Streaming Log Output](#17-streaming-log-output--formatted-tables) | `http_logviewer/renderer/terminal` | `renderStreamLine`, `renderStreamHeader`, `renderStreamSeparator`, `StatusTicker`, `renderTicker`, `renderSummaryBanner`, `highlightSuspiciousUri`, `highlightUriDiff`, `renderJsonRecord`, `renderJsonStreamLine` | Formatted 7-column streaming layout, adaptive width truncation, live status ticker & session summary, suspicious URI highlighting, and NDJSON/JSON SIEM export |
 | [Grouped Actor View](#18-grouped-actor-view--anomaly-drill-down) | `http_logviewer/renderer/terminal` | `sortClustersByRisk`, `renderGroupedSummaryTable`, `renderActorClusterCard`, `renderGroupedClusters`, `renderActorTimeline`, `renderActorDetail`, `generateIncidentReport`, `IncidentReportFormat` | Correlated multi-IP actor summary tables, cluster detail cards, chronological multi-IP attack timelines, and automated incident reports (Markdown, plain text, Fail2ban, UFW, iptables) |
+| [CLI Options & Argument Parser](#19-cli-options--argument-parser) | `http_logviewer/cli/args` | `parseCommandLine`, `parseCommandLineArgs`, `validateInputPath`, `loadViewerConfigToml`, `helpText`, `versionText` | Complete CLI option parser, TOML/JSON configuration loading, exit code handling, and usage documentation |
+| [Public Library API & Programmatic Consumption](#20-public-library-api--programmatic-consumption) | `http_logviewer` | `parseLine`, `enrichGeo`, `enrichWithGeo`, `analyzeEntry`, `analyzeRequest`, `correlateStream`, `correlateEvent`, `enrichAndAnalyze` | Clean top-level library API for embedding into third-party Nim applications with zero global mutable state and full thread-safety |
 | Error Hierarchy | `http_logviewer/core/errors` | `HttpLogViewerError`, `ParseError`, `ThreatAnalysisError`, `ConfigError` | Robust exception hierarchy derived from `CatchableError` |
 
 ---
@@ -1173,6 +1176,53 @@ nim r --path:src examples/cli_options_and_argument_parser.nim
 
 ---
 
+### 20. Public Library API & Programmatic Consumption
+
+The `http_logviewer` root module exports a clean, idiomatic, high-level API enabling third-party Nim applications to embed log parsing, threat intelligence, geolocation enrichment, and multi-IP correlation directly into custom security tools, SIEM pipelines, and web dashboards with zero global mutable state and full reentrancy / thread-safety:
+
+- **`parseLine(line: string, format: LogFormat = LogFormatAuto): Option[HttpLogEntry]`**: Low-overhead parsing supporting CLF, Combined, Nginx, and JSON log formats with automatic format heuristic detection.
+- **`enrichGeo(ip: string, dbPath: Option[string] = none(string)): GeoLocation`** (and alias **`enrichWithGeo`**): Resolves client IP addresses to ISO-3166-1 country codes, full country names, and Unicode flag emojis (e.g., `🇺🇸 US`, `🇩🇪 DE`, `🇳🇱 NL`, `🏠 LAN`), automatically identifying private/LAN addresses. Overloads accept pre-instantiated `GeoIpEngine` with LRU caching.
+- **`analyzeEntry(entry: HttpLogEntry): ThreatProfile`** (and alias **`analyzeRequest`**): Pure evaluation procedure calculating composite anomaly risk scores (0 to 100) and categorizing visitors into real users, verified bots, commercial scrapers, or bad actor hackers based on OWASP Top 10 attack signatures and User-Agent taxonomy.
+- **`correlateStream(correlator: ActorCorrelator, entry: HttpLogEntry, threat: ThreatProfile): Option[string]`** (and alias **`correlateEvent`**): Correlates log entries across disparate IP addresses into multi-IP actor clusters using behavioral probe fingerprinting, sliding time window recency, and residential proxy rotation heuristics. Batch overload processes entire log sequences.
+- **`enrichAndAnalyze(line: string, ...): Option[EnrichedLogRecord]`**: High-level all-in-one convenience helper combining parsing, enrichment, and analysis in a single procedure call.
+
+```nim
+import std/options
+import http_logviewer
+
+# 1. Parse a log line with auto-detection
+let optEntry = parseLine("185.220.101.5 - - [23/Apr/2024:12:00:00 +0000] \"GET /.env HTTP/1.1\" 404 162 \"-\" \"curl/7.88.1\"")
+if optEntry.isSome:
+  let entry = optEntry.get()
+
+  # 2. Enrich with Geolocation and Country Flag
+  let geo = enrichGeo(entry.clientIp)
+  echo geo.flagEmoji, " ", geo.countryCode, " (", geo.countryName, ")"
+
+  # 3. Analyze threat intent and risk score
+  let threat = analyzeEntry(entry)
+  echo "Threat Score: ", threat.score, "/100 - Category: ", threat.category
+
+  # 4. Correlate with active multi-IP actor clusters
+  let correlator = newActorCorrelator(windowSeconds = 1800)
+  let clusterId = correlateStream(correlator, entry, threat)
+  if clusterId.isSome:
+    echo "Associated with Actor Cluster: ", clusterId.get()
+```
+
+The recording below demonstrates programmatic library consumption, log parsing, geolocation lookup, threat analysis, multi-IP actor correlation, and stream rendering:
+
+![Public Library API & Programmatic Consumption](docs/images/library_usage.gif)
+
+> *Source session recording:* [`docs/recordings/library_usage.cast`](docs/recordings/library_usage.cast) *(recorded with Asciinema, rendered via Agg with JetBrainsMono Nerd Font Mono)*.
+
+Compile and run this example:
+```bash
+nim r --path:src examples/library_usage.nim
+```
+
+---
+
 ## Examples
 
 The `examples/` folder provides executable demonstrations of each pipeline layer:
@@ -1197,6 +1247,7 @@ The `examples/` folder provides executable demonstrations of each pipeline layer
 - [`examples/streaming_terminal_ui.nim`](examples/streaming_terminal_ui.nim): Streaming log output, formatted tables, adaptive width truncation, status ticker, URI highlighting, and JSON emission.
 - [`examples/grouped_actor_view.nim`](examples/grouped_actor_view.nim): Grouped multi-IP actor view, cluster cards, chronological attack timelines, and automated security incident reports (Markdown, Fail2ban, UFW, iptables).
 - [`examples/cli_options_and_argument_parser.nim`](examples/cli_options_and_argument_parser.nim): CLI options, argument parser, configuration file support (.toml/.json), input path validation, and graceful signal handling.
+- [`examples/library_usage.nim`](examples/library_usage.nim): Public library API, programmatic log parsing, geolocation lookup, threat analysis, multi-IP actor correlation, and zero-state reentrancy.
 - [`examples/pipeline_scaffolding.nim`](examples/pipeline_scaffolding.nim): Cross-module pipeline event envelope demonstration.
 
 ---

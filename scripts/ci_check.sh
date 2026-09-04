@@ -34,6 +34,6 @@ if [ -d "src/nimcache" ]; then
 fi
 
 echo "==> [CI Check] 6. Verifying binary execution..."
-./build/http_logviewer >/dev/null 2>&1 || { echo "Failed to execute build/http_logviewer"; exit 1; }
+./build/http_logviewer < /dev/null >/dev/null 2>&1 || { echo "Failed to execute build/http_logviewer"; exit 1; }
 
 echo "==> [CI Check] All CI sanity checks passed successfully!"

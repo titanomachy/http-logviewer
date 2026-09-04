@@ -229,3 +229,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Created standalone runnable code example in `examples/cli_options_and_argument_parser.nim`.
 - Recorded terminal asciicast (`docs/recordings/cli_options_and_argument_parser.cast`) and rendered high-resolution animated demo GIF (`docs/images/cli_options_and_argument_parser.gif`) with Asciinema and Agg using JetBrainsMono Nerd Font Mono.
 
+##### Category B: Public Library API & Pipeline Orchestration
+- Exposed clean public module interface in `src/http_logviewer.nim` exporting core domain types, enums, parsers, classifiers, correlators, and renderers without requiring external applications to manage deep submodule imports (Item 01).
+- Implemented high-level library functions: `parseLine` (with CLF, Combined, Nginx, JSON auto-detection and in-place overload), `enrichGeo` and `enrichWithGeo` (offline MMDB and embedded CIDR resolution with private LAN detection and GeoIpEngine LRU cache support), `analyzeEntry` and `analyzeRequest` (composite OWASP Top 10 threat scoring and visitor intent categorization), `correlateStream` and `correlateEvent` (single-record clustering and batch sequence processing into `Table[string, ActorCluster]`), and `enrichAndAnalyze` all-in-one pipeline helper (Item 02).
+- Guaranteed zero global mutable state across all library procedures, thread-safety, and reentrancy: removed global CIDR fallback in `terminal.nim`, converted CLI signal handling flag `keepRunning` to a thread-local `{.threadvar.}`, and verified independent non-interfering execution across multiple correlator instances (Item 03).
+- Added comprehensive Nim doc comments (`##`) on all public types, procedures, and templates, verified through HTML documentation compilation via `nimble docs` (Item 04).
+- Created comprehensive unit and integration test suite in `tests/t_library_api.nim` integrated into `tests/test_all.nim` verifying clean root imports, high-level procedure correctness, private IP handling, threat analysis, multi-IP clustering, and reentrancy.
+- Created standalone runnable code example in `examples/library_usage.nim` demonstrating programmatic consumption of `http_logviewer` as an embedded library (Item 05).
+- Recorded terminal asciicast (`docs/recordings/library_usage.cast`) and rendered high-resolution animated demo GIF (`docs/images/library_usage.gif`) with Asciinema and Agg using JetBrainsMono Nerd Font Mono.
+
+
