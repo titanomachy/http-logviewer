@@ -130,13 +130,14 @@ proc newCidrGeoIpProvider*(): CidrGeoIpProvider =
   result.addIpv4Cidr("206.189.0.0/16", "US", "United States")
   result.addIpv6Cidr("2400:6180::/32", "US", "United States")
 
-  # Hetzner (Germany)
+  # Hetzner & Germany
   result.addIpv4Cidr("78.46.0.0/15", "DE", "Germany")
   result.addIpv4Cidr("88.198.0.0/16", "DE", "Germany")
   result.addIpv4Cidr("136.243.0.0/16", "DE", "Germany")
   result.addIpv4Cidr("144.76.0.0/16", "DE", "Germany")
   result.addIpv4Cidr("159.69.0.0/16", "DE", "Germany")
   result.addIpv4Cidr("168.119.0.0/16", "DE", "Germany")
+  result.addIpv4Cidr("194.26.29.0/24", "DE", "Germany")
   result.addIpv4Cidr("195.201.0.0/16", "DE", "Germany")
   result.addIpv6Cidr("2a01:4f8::/32", "DE", "Germany")
 
@@ -149,6 +150,7 @@ proc newCidrGeoIpProvider*(): CidrGeoIpProvider =
   result.addIpv6Cidr("2001:41d0::/32", "FR", "France")
 
   # Netherlands (NL)
+  result.addIpv4Cidr("45.154.255.0/24", "NL", "Netherlands")
   result.addIpv4Cidr("82.168.0.0/14", "NL", "Netherlands")
   result.addIpv4Cidr("84.80.0.0/13", "NL", "Netherlands")
   result.addIpv4Cidr("86.80.0.0/12", "NL", "Netherlands")
@@ -173,6 +175,7 @@ proc newCidrGeoIpProvider*(): CidrGeoIpProvider =
   result.addIpv4Cidr("87.250.250.0/24", "RU", "Russian Federation")
   result.addIpv4Cidr("93.158.134.0/24", "RU", "Russian Federation")
   result.addIpv4Cidr("178.154.131.0/24", "RU", "Russian Federation")
+  result.addIpv4Cidr("193.32.161.0/24", "RU", "Russian Federation")
   result.addIpv4Cidr("213.180.193.0/24", "RU", "Russian Federation")
   result.addIpv6Cidr("2a02:6b8::/32", "RU", "Russian Federation")
 

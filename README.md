@@ -95,6 +95,7 @@ High-performance HTTP log viewer and rogue bot detector written in Nim. `http_lo
   - [Subnet, ASN & Temporal Clustering](#15-subnet-asn--temporal-clustering)
   - [Background-Colored HTTP Status Highlighting](#16-background-colored-http-status-highlighting)
   - [Streaming Log Output & Formatted Tables](#17-streaming-log-output--formatted-tables)
+  - [Grouped Actor View & Anomaly Drill-down](#18-grouped-actor-view--anomaly-drill-down)
 - [Examples](#examples)
 - [Development and Documentation](#development-and-documentation)
 - [Attribution and License](#attribution-and-license)
@@ -152,6 +153,9 @@ The library exposes clean, type-safe Nim APIs organized into modular layers:
 | [Actor Fingerprint Synthesis](#13-actor-fingerprint-synthesis--multi-ip-correlation) | `http_logviewer/analyzer/correlator` | `ActorFingerprint`, `generateProbeFingerprint`, `generateActorFingerprint`, `normalizePathPattern`, `hashPathSequence`, `normalizeQueryParams`, `jaccardSimilarity`, `extractSessionTokens` | Deterministic behavioral fingerprints, structural path pattern sequences, cache-buster parameter normalization, and Jaccard similarity sets |
 | [Multi-IP Probe Correlation](#14-multi-ip-probe-sequence-correlation) | `http_logviewer/analyzer/correlator` | `ActorClusterTable`, `SlidingWindowTracker`, `RecentProbe`, `ClusterRiskMetrics`, `newActorClusterTable`, `correlateRecord`, `calculateClusterMetrics`, `detectProxyRotation`, `pruneExpired` | In-memory sliding time window tracker (5-60 min), probe sequence correlation, residential proxy rotation detection, dynamic ActorClusterTable registry, and cluster-level risk metrics |
 | [Subnet, ASN & Temporal Clustering](#15-subnet-asn--temporal-clustering) | `http_logviewer/analyzer/correlator` | `ipv4ToSubnet`, `ipv6ToSubnet`, `extractSubnetCidr`, `ipInSubnet`, `identifyHostingProvider`, `detectSynchronizedBurst`, `formatClusterTag` | CIDR math & subnet grouping (/24 IPv4 and /64 IPv6), hosting provider/datacenter detection (DigitalOcean, OVH, Hetzner, AWS, Choopa), millisecond synchronized bursts, and human-readable cluster tags |
+| [HTTP Status Highlighting](#16-background-colored-http-status-highlighting) | `http_logviewer/renderer/styles` | `formatStatusCode`, `formatIntentBadge`, `formatCountryColumn`, `terminalDisplayWidth`, `alignColumn`, `detectColorSupport`, `shouldColorize`, `stripAnsi` | High-contrast background badges (404, 5xx, 2xx, 3xx), color auto-detection policies (NO_COLOR, dumb), monochromatic fallback, intent badges, and visual width alignment |
+| [Streaming Log Output](#17-streaming-log-output--formatted-tables) | `http_logviewer/renderer/terminal` | `renderStreamLine`, `renderStreamHeader`, `renderStreamSeparator`, `StatusTicker`, `renderTicker`, `renderSummaryBanner`, `highlightSuspiciousUri`, `highlightUriDiff`, `renderJsonRecord`, `renderJsonStreamLine` | Formatted 7-column streaming layout, adaptive width truncation, live status ticker & session summary, suspicious URI highlighting, and NDJSON/JSON SIEM export |
+| [Grouped Actor View](#18-grouped-actor-view--anomaly-drill-down) | `http_logviewer/renderer/terminal` | `sortClustersByRisk`, `renderGroupedSummaryTable`, `renderActorClusterCard`, `renderGroupedClusters`, `renderActorTimeline`, `renderActorDetail`, `generateIncidentReport`, `IncidentReportFormat` | Correlated multi-IP actor summary tables, cluster detail cards, chronological multi-IP attack timelines, and automated incident reports (Markdown, plain text, Fail2ban, UFW, iptables) |
 | Error Hierarchy | `http_logviewer/core/errors` | `HttpLogViewerError`, `ParseError`, `ThreatAnalysisError`, `ConfigError` | Robust exception hierarchy derived from `CatchableError` |
 
 ---
@@ -1049,6 +1053,65 @@ nim r --path:src examples/streaming_terminal_ui.nim
 
 ---
 
+### 18. Grouped Actor View & Anomaly Drill-down
+
+Provides multi-IP actor cluster presentation, detailed threat actor profile cards, forensic attack timelines, and automated firewall mitigation rule generation:
+
+- **Grouped Summary Table (`renderGroupedSummaryTable`, `sortClustersByRisk`)**: Displays correlated multi-IP clusters sorted by descending threat score (with tie-breaking on request count and unique IP count). Automatically adapts between wide tabular layouts (>=105 cols displaying rank, cluster ID, campaign tag, threat badge, request counts, 404 counts, unique IPs, and duration) and compact 80-column constrained layouts.
+- **Actor Cluster Profile Card (`renderActorClusterCard`, `renderGroupedClusters`)**: Formats detailed profile cards adhering strictly to Spec 06 Section 4 layout:
+  - Threat risk badge and numeric score (e.g. `[ HACKER! ] (Score: 95/100)`)
+  - Total requests with 404 response breakdown: `48 requests (48 x [ 404 ])`
+  - Distinct IP addresses with country flag emojis, ISO codes, and full country names via `GeoIpProvider`
+  - Hosting / Datacenter providers and subnet CIDRs
+  - Behavioral anomaly indicators (⚠️ Residential Proxy Rotation Detected, ⚡ Synchronized Burst Fleet)
+  - Primary User-Agent string
+  - Probed endpoint paths
+  - First seen, last seen timestamps, and calculated attack duration
+- **Chronological Attack Timeline & Drill-down (`renderActorTimeline`, `renderActorDetail`)**: Reconstructs the chronological sequence of requests across all participating IPs within a cluster (`--actor-detail=<ID>`). Visualizes attack progression with relative time deltas (`+00:00s`, `+00:02s`), country flags, HTTP status badges, client IPs, and HTTP methods/paths. Appends automated firewall mitigation rules.
+- **Exportable Incident Reports & Firewall Rule Generation (`generateIncidentReport`, `generateFail2banRules`, `generateUfwRules`, `generateIptablesRules`, `generateMarkdownReport`, `generatePlainTextReport`)**: Automatically generates actionable containment rules and reports across five formats (`IncidentReportFormat`):
+  - `fail2ban`: Ready-to-execute `fail2ban-client set <jail> banip <IP>` scripts
+  - `ufw`: `ufw deny from <IP> to any comment 'http_logviewer <ID>'` rules
+  - `iptables`: `iptables -A INPUT -s <IP> -j DROP -m comment --comment '...'` rules
+  - `markdown`: Full structured SOC incident report with executive summary, cluster tables, and forensic breakdown
+  - `plain`: Clean plain-text security advisory
+  - Automated RFC 1918 private/LAN IP suppression to ensure local subnets are never blocked
+- **Unified Correlator Overloads**: High-level overloads for `ActorCorrelator`, `Table[string, ActorCluster]`, and sequences for seamless pipeline integration.
+
+```nim
+import http_logviewer/core/types
+import http_logviewer/renderer/terminal
+
+# 1. Grouped summary table sorted by risk
+echo renderGroupedSummaryTable(clusters, colorize = true, maxWidth = 120)
+
+# 2. Detailed actor cluster card (Spec 06 Section 4 layout)
+echo renderActorClusterCard(cluster, colorize = true, useEmoji = true, width = 80)
+
+# 3. Chronological multi-IP attack timeline
+echo renderActorTimeline(cluster, colorize = true, useEmoji = true, maxWidth = 100)
+
+# 4. Forensic drill-down with firewall rules
+echo renderActorDetail(cluster, colorize = true, useEmoji = true, width = 80)
+
+# 5. Exportable incident reports and firewall scripts
+let fail2banScript = generateFail2banRules(clusters, jail = "nginx-botsearch")
+let ufwScript = generateUfwRules(clusters)
+let mdReport = generateMarkdownReport(clusters, title = "Security Incident Report")
+```
+
+The recording below demonstrates grouped actor summary tables, Spec 06 cluster profile cards, chronological attack timelines with time deltas, automated firewall script generation (Fail2ban, UFW), and Markdown incident reports:
+
+![Grouped Actor View & Anomaly Drill-down](docs/images/grouped_actor_view.gif)
+
+> *Source session recording:* [`docs/recordings/grouped_actor_view.cast`](docs/recordings/grouped_actor_view.cast) *(recorded with Asciinema, rendered via Agg with JetBrainsMono Nerd Font Mono)*.
+
+Compile and run this example:
+```bash
+nim r --path:src examples/grouped_actor_view.nim
+```
+
+---
+
 ## Examples
 
 The `examples/` folder provides executable demonstrations of each pipeline layer:
@@ -1071,6 +1134,7 @@ The `examples/` folder provides executable demonstrations of each pipeline layer
 - [`examples/subnet_asn_temporal_clustering.nim`](examples/subnet_asn_temporal_clustering.nim): Subnet CIDR math & grouping (/24 IPv4 and /64 IPv6), hosting provider/datacenter IP identification, synchronized burst request detection, and human-readable cluster tags.
 - [`examples/status_code_highlighting.nim`](examples/status_code_highlighting.nim): Background-colored HTTP status code badges (404, 5xx, 2xx, 3xx), terminal color auto-detection, monochromatic fallbacks, visitor intent badges, and monospace visual width alignment.
 - [`examples/streaming_terminal_ui.nim`](examples/streaming_terminal_ui.nim): Streaming log output, formatted tables, adaptive width truncation, status ticker, URI highlighting, and JSON emission.
+- [`examples/grouped_actor_view.nim`](examples/grouped_actor_view.nim): Grouped multi-IP actor view, cluster cards, chronological attack timelines, and automated security incident reports (Markdown, Fail2ban, UFW, iptables).
 - [`examples/pipeline_scaffolding.nim`](examples/pipeline_scaffolding.nim): Cross-module pipeline event envelope demonstration.
 
 ---

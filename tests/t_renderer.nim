@@ -1,8 +1,10 @@
 ## Test suite for Phase 06: Terminal Presentation & Color-Coded Rendering Engine
 ## Category A: Background-Colored HTTP Status Highlighting & Terminal Layouts
 
-import std/[unittest, strutils, options, os, times, sets, json]
+import std/[unittest, strutils, options, os, times, sets, json, tables]
 import http_logviewer/core/[types, config]
+import http_logviewer/enrichment/[geoip, flags]
+import http_logviewer/analyzer/correlator
 import http_logviewer/renderer/[styles, terminal]
 
 suite "ANSI Status Code Badge Formatter (Phase 06 / Category A / Item 01)":
@@ -713,6 +715,351 @@ suite "Terminal Layout Rendering Across Displays (Phase 06 / Category B / Item 0
     let line50 = renderStreamLine(record, colorize = true, useEmoji = true, maxWidth = 50)
     check terminalDisplayWidth(line50) <= 50
     check line50.endsWith("\e[0m")
+
+suite "Grouped Actor Summary Table (Phase 06 / Category C / Item 01)":
+  test "Item 01: sortClustersByRisk sorts clusters in descending risk order":
+    let cLow = newActorCluster(clusterId = "ACTOR-LOW", highestThreatScore = 20, aggregateRisk = 20, totalRequests = 5)
+    let cMed = newActorCluster(clusterId = "ACTOR-MED", highestThreatScore = 50, aggregateRisk = 50, totalRequests = 10)
+    let cHigh = newActorCluster(clusterId = "ACTOR-HIGH", highestThreatScore = 95, aggregateRisk = 95, totalRequests = 2)
+
+    let sorted = sortClustersByRisk([cLow, cHigh, cMed])
+    check sorted.len == 3
+    check sorted[0].clusterId == "ACTOR-HIGH"
+    check sorted[1].clusterId == "ACTOR-MED"
+    check sorted[2].clusterId == "ACTOR-LOW"
+
+  test "Item 01: sortClustersByRisk breaks ties using requests and IP counts":
+    var ips1 = initHashSet[string]()
+    ips1.incl("1.1.1.1")
+    var ips2 = initHashSet[string]()
+    ips2.incl("2.2.2.1"); ips2.incl("2.2.2.2")
+
+    let c1 = newActorCluster(clusterId = "ACTOR-1", aggregateRisk = 80, totalRequests = 10, ips = ips1)
+    let c2 = newActorCluster(clusterId = "ACTOR-2", aggregateRisk = 80, totalRequests = 20, ips = ips2)
+
+    let sorted = sortClustersByRisk([c1, c2])
+    check sorted[0].clusterId == "ACTOR-2" # Higher requests wins tie
+    check sorted[1].clusterId == "ACTOR-1"
+
+  test "Item 01: renderGroupedSummaryTable in wide layout includes all columns":
+    var ips = initHashSet[string]()
+    ips.incl("45.154.255.8"); ips.incl("194.26.29.112")
+    let cluster = newActorCluster(
+      clusterId = "ACTOR-7F3A",
+      clusterTag = "[Actor #1: 2 IPs - WP-Scan Botnet]",
+      category = CategoryBadActorHacker,
+      highestThreatScore = 95,
+      aggregateRisk = 95,
+      totalRequests = 48,
+      status404Count = 48,
+      ips = ips,
+      firstSeen = parse("2026-10-10 13:50:12", "yyyy-MM-dd HH:mm:ss"),
+      lastSeen = parse("2026-10-10 13:58:45", "yyyy-MM-dd HH:mm:ss")
+    )
+
+    let wideTable = renderGroupedSummaryTable([cluster], colorize = false, maxWidth = 120)
+    check wideTable.contains("CORRELATED MULTI-IP ACTOR CLUSTERS")
+    check wideTable.contains("RANK")
+    check wideTable.contains("CLUSTER ID")
+    check wideTable.contains("TAG / CAMPAIGN")
+    check wideTable.contains("THREAT LEVEL")
+    check wideTable.contains("REQS")
+    check wideTable.contains("404s")
+    check wideTable.contains("IPS")
+    check wideTable.contains("DURATION")
+    check wideTable.contains("ACTOR-7F3A")
+    check wideTable.contains("[Actor #1: 2 IPs - WP-Scan Botnet]")
+    check wideTable.contains("[ HACKER! ] 95")
+    check wideTable.contains("48")
+    check wideTable.contains("08m 33s")
+    check wideTable.contains("=")
+
+  test "Item 01: renderGroupedSummaryTable in compact 80-col layout respects width":
+    var ips = initHashSet[string]()
+    ips.incl("1.2.3.4")
+    let cluster = newActorCluster(
+      clusterId = "ACTOR-B2A4",
+      clusterTag = "[Actor #2: 1 IP - DotEnv Scanner]",
+      category = CategoryBadActorHacker,
+      aggregateRisk = 90,
+      totalRequests = 12,
+      ips = ips
+    )
+
+    let compactTable = renderGroupedSummaryTable([cluster], colorize = false, maxWidth = 80)
+    for line in compactTable.splitLines():
+      check terminalDisplayWidth(line) <= 80
+    check compactTable.contains("ACTOR-B2A4")
+    check compactTable.contains("[ HACKER! ] 90")
+
+  test "Item 01: renderGroupedSummaryTable with empty cluster set produces informative banner":
+    let emptyTable = renderGroupedSummaryTable(@[], colorize = false, maxWidth = 80)
+    check emptyTable.contains("No correlated multi-IP actor clusters detected.")
+    check emptyTable.contains("=")
+
+  test "Item 01: Table and Correlator overloads format cleanly":
+    var tbl = initTable[string, ActorCluster]()
+    tbl["A1"] = newActorCluster(clusterId = "A1", aggregateRisk = 60, totalRequests = 5)
+    let tblStr = renderGroupedSummaryTable(tbl, colorize = false)
+    check tblStr.contains("A1")
+
+    let corr = newActorCorrelator()
+    corr.clusters["A2"] = newActorCluster(clusterId = "A2", aggregateRisk = 75, totalRequests = 8)
+    let corrStr = renderGroupedSummaryTable(corr, colorize = false)
+    check corrStr.contains("A2")
+
+suite "Actor Cluster Card Display (Phase 06 / Category C / Item 02)":
+  test "Item 02: renderActorClusterCard renders full profile per Spec 06 format":
+    var ips = initHashSet[string]()
+    ips.incl("45.154.255.8")
+    ips.incl("194.26.29.112")
+    ips.incl("185.220.101.5")
+    ips.incl("193.32.161.20")
+    ips.incl("193.32.161.21")
+    ips.incl("193.32.161.22")
+
+    var paths = @["/.env", "/wp-config.php", "/wp-login.php", "/xmlrpc.php", "/actuator/env"]
+
+    let cluster = newActorCluster(
+      clusterId = "ACTOR-7F3A",
+      clusterTag = "[ACTOR-7F3A] - WordPress & Secret Probe Botnet",
+      primaryUa = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+      ips = ips,
+      totalRequests = 48,
+      status404Count = 48,
+      firstSeen = parse("2026-10-10 13:50:12", "yyyy-MM-dd HH:mm:ss"),
+      lastSeen = parse("2026-10-10 13:58:45", "yyyy-MM-dd HH:mm:ss"),
+      highestThreatScore = 95,
+      aggregateRisk = 95,
+      category = CategoryBadActorHacker,
+      flags = {ThreatCmsExploit, ThreatSensitiveFile},
+      probedPaths = paths
+    )
+
+    let card = renderActorClusterCard(cluster, colorize = false, useEmoji = true, width = 80)
+    check card.contains("CRITICAL ACTOR CLUSTER: [ACTOR-7F3A] - WordPress & Secret Probe Botnet")
+    check card.contains("Risk Level      : [ HACKER! ] (Score: 95/100)")
+    check card.contains("Total Requests  : 48 requests (48 x [ 404 ])")
+    check card.contains("Distinct IPs    : 6 IPs across")
+    check card.contains("45.154.255.8")
+    check card.contains("194.26.29.112")
+    check card.contains("185.220.101.5")
+    check card.contains("193.32.161.20")
+    check card.contains("Primary UA      : Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
+    check card.contains("Probed Paths    : /.env")
+    check card.contains("/wp-config.php")
+    check card.contains("/wp-login.php")
+    check card.contains("/xmlrpc.php")
+    check card.contains("/actuator/env")
+    check card.contains("First Seen      : 2026-10-10 13:50:12")
+    check card.contains("Last Seen       : 2026-10-10 13:58:45 (Duration: 08m 33s)")
+
+  test "Item 02: renderActorClusterCard formats indicators and hosting providers":
+    var ips = initHashSet[string]()
+    ips.incl("159.65.1.1")
+    var provs = initHashSet[string]()
+    provs.incl("DigitalOcean")
+    var subnets = initHashSet[string]()
+    subnets.incl("159.65.0.0/16")
+
+    let cluster = newActorCluster(
+      clusterId = "ACTOR-BURST",
+      clusterTag = "[Actor #5: 1 IP (DigitalOcean) - Burst Probe]",
+      ips = ips,
+      hostingProviders = provs,
+      subnets = subnets,
+      proxyRotationDetected = true,
+      synchronizedBurstDetected = true,
+      category = CategoryBadActorHacker,
+      aggregateRisk = 85
+    )
+
+    let card = renderActorClusterCard(cluster, colorize = false)
+    check card.contains("Hosting / DC    : DigitalOcean")
+    check card.contains("Subnets         : 159.65.0.0/16")
+    check card.contains("Residential Proxy Rotation Detected")
+    check card.contains("Synchronized Burst Fleet")
+
+  test "Item 02: renderGroupedClusters formats list of cards cleanly":
+    let c1 = newActorCluster(clusterId = "A1", aggregateRisk = 90, category = CategoryBadActorHacker)
+    let c2 = newActorCluster(clusterId = "A2", aggregateRisk = 40, category = CategorySuspicious)
+
+    let cards = renderGroupedClusters([c1, c2], colorize = false)
+    check cards.contains("A1")
+    check cards.contains("A2")
+    check cards.contains("\n\n")
+
+suite "Chronological Actor Timeline & Drill-Down (Phase 06 / Category C / Item 03)":
+  test "Item 03: renderActorTimeline formats events chronologically with time deltas":
+    let t0 = parse("2026-10-10 13:50:12", "yyyy-MM-dd HH:mm:ss")
+    let t1 = parse("2026-10-10 13:50:14", "yyyy-MM-dd HH:mm:ss") # +2s
+    let t2 = parse("2026-10-10 13:51:26", "yyyy-MM-dd HH:mm:ss") # +74s = +01:14s
+
+    let e1 = initHttpLogEntry(clientIp = "45.154.255.8", timestamp = t0, `method` = HttpGet, path = "/.env", statusCode = 404)
+    let e2 = initHttpLogEntry(clientIp = "194.26.29.112", timestamp = t1, `method` = HttpGet, path = "/wp-config.php", statusCode = 404)
+    let e3 = initHttpLogEntry(clientIp = "185.220.101.5", timestamp = t2, `method` = HttpPost, path = "/wp-login.php", statusCode = 404)
+
+    var ips = initHashSet[string]()
+    ips.incl("45.154.255.8"); ips.incl("194.26.29.112"); ips.incl("185.220.101.5")
+
+    # Pass in unsorted entries
+    let cluster = newActorCluster(
+      clusterId = "ACTOR-TIMELINE",
+      ips = ips,
+      entries = @[e2, e1, e3]
+    )
+
+    let timeline = renderActorTimeline(cluster, colorize = false, useEmoji = false)
+    check timeline.contains("CHRONOLOGICAL ATTACK TIMELINE: [ACTOR-TIMELINE]")
+    check timeline.contains("3 events across 3 distinct IPs")
+    check timeline.contains("DELTA    TIME")
+
+    # Chronologically e1 should appear before e2, e2 before e3
+    let posE1 = timeline.find("/.env")
+    let posE2 = timeline.find("/wp-config.php")
+    let posE3 = timeline.find("/wp-login.php")
+    check posE1 >= 0 and posE2 >= 0 and posE3 >= 0
+    check posE1 < posE2
+    check posE2 < posE3
+
+    # Deltas
+    check timeline.contains("+00:00s")
+    check timeline.contains("+00:02s")
+    check timeline.contains("+01:14s")
+
+  test "Item 03: renderActorDetail produces full report with mitigation commands":
+    var ips = initHashSet[string]()
+    ips.incl("194.26.29.112")
+    let cluster = newActorCluster(
+      clusterId = "ACTOR-DETAIL",
+      ips = ips,
+      category = CategoryBadActorHacker,
+      aggregateRisk = 90
+    )
+
+    let detail = renderActorDetail(cluster, colorize = false)
+    check detail.contains("CRITICAL ACTOR CLUSTER")
+    check detail.contains("CHRONOLOGICAL ATTACK TIMELINE")
+    check detail.contains("QUICK MITIGATION (UFW / FAIL2BAN / IPTABLES)")
+    check detail.contains("ufw deny from 194.26.29.112 to any comment 'http_logviewer ACTOR-DETAIL'")
+    check detail.contains("iptables -A INPUT -s 194.26.29.112 -j DROP")
+
+  test "Item 03: renderActorDetail with ActorCorrelator lookup":
+    let corr = newActorCorrelator()
+    let cl = newActorCluster(clusterId = "ACTOR-FOUND", aggregateRisk = 85, category = CategoryBadActorHacker)
+    corr.clusters["ACTOR-FOUND"] = cl
+
+    let resFound = renderActorDetail(corr, "ACTOR-FOUND", colorize = false)
+    check resFound.contains("ACTOR-FOUND")
+
+    let resNotFound = renderActorDetail(corr, "ACTOR-MISSING", colorize = false)
+    check resNotFound.contains("Error: Actor cluster 'ACTOR-MISSING' not found")
+
+suite "Exportable Incident Reports & Firewall Rules (Phase 06 / Category C / Item 04)":
+  test "Item 04: generateFail2banRules creates valid banip script":
+    var ips = initHashSet[string]()
+    ips.incl("194.26.29.112"); ips.incl("185.220.101.5"); ips.incl("10.0.0.1") # 10.0.0.1 is private LAN and must be omitted
+    let cluster = newActorCluster(clusterId = "ACTOR-F2B", ips = ips, aggregateRisk = 90, category = CategoryBadActorHacker)
+
+    let f2b = generateFail2banRules([cluster], jail = "nginx-botsearch")
+    check f2b.startsWith("#!/usr/bin/env bash")
+    check f2b.contains("fail2ban-client set nginx-botsearch banip 185.220.101.5")
+    check f2b.contains("fail2ban-client set nginx-botsearch banip 194.26.29.112")
+    check not f2b.contains("10.0.0.1") # Private IP filtered out
+
+  test "Item 04: generateUfwRules creates valid ufw deny script":
+    var ips = initHashSet[string]()
+    ips.incl("194.26.29.112")
+    let cluster = newActorCluster(clusterId = "ACTOR-UFW", ips = ips, aggregateRisk = 85, category = CategoryBadActorHacker)
+
+    let ufw = generateUfwRules([cluster])
+    check ufw.contains("ufw deny from 194.26.29.112 to any comment 'http_logviewer ACTOR-UFW'")
+
+  test "Item 04: generateIptablesRules creates valid iptables DROP script":
+    var ips = initHashSet[string]()
+    ips.incl("194.26.29.112")
+    let cluster = newActorCluster(clusterId = "ACTOR-IPT", ips = ips, aggregateRisk = 85, category = CategoryBadActorHacker)
+
+    let ipt = generateIptablesRules([cluster], chain = "INPUT")
+    check ipt.contains("iptables -A INPUT -s 194.26.29.112 -j DROP -m comment --comment 'http_logviewer ACTOR-IPT'")
+
+  test "Item 04: generateMarkdownReport creates valid Markdown document with tables and code blocks":
+    var ips = initHashSet[string]()
+    ips.incl("194.26.29.112")
+    let cluster = newActorCluster(
+      clusterId = "ACTOR-MD",
+      clusterTag = "[ACTOR-MD] - Test Campaign",
+      ips = ips,
+      aggregateRisk = 90,
+      category = CategoryBadActorHacker,
+      totalRequests = 10,
+      status404Count = 10,
+      probedPaths = @["/.env", "/wp-login.php"]
+    )
+
+    let md = generateMarkdownReport([cluster], title = "Weekly Security Briefing")
+    check md.startsWith("# Weekly Security Briefing")
+    check md.contains("## 1. Executive Summary")
+    check md.contains("## 2. Correlated Actor Clusters")
+    check md.contains("| Cluster ID | Campaign / Tag | Risk Score |")
+    check md.contains("| `ACTOR-MD` |")
+    check md.contains("## 3. Rogue Threat Actor Profiles")
+    check md.contains("### Cluster `ACTOR-MD`")
+    check md.contains("## 4. Automated Firewall & Containment Rules")
+    check md.contains("```bash")
+    check md.contains("fail2ban-client set nginx-botsearch banip 194.26.29.112")
+
+  test "Item 04: generatePlainTextReport creates clean text report":
+    let cluster = newActorCluster(clusterId = "ACTOR-TXT", aggregateRisk = 90, category = CategoryBadActorHacker)
+    let txt = generatePlainTextReport([cluster])
+    check txt.contains("HTTP LOGVIEWER SECURITY INCIDENT REPORT")
+    check txt.contains("CORRELATED MULTI-IP ACTOR CLUSTERS")
+    check txt.contains("AUTOMATED FIREWALL CONTAINMENT RULES")
+
+  test "Item 04: generateIncidentReport dispatches across formats":
+    var ips = initHashSet[string]()
+    ips.incl("194.26.29.112")
+    let cluster = newActorCluster(clusterId = "ACTOR-DISP", ips = ips, aggregateRisk = 90, category = CategoryBadActorHacker)
+    let md = generateIncidentReport([cluster], ReportMarkdown)
+    let txt = generateIncidentReport([cluster], ReportPlainText)
+    let f2b = generateIncidentReport([cluster], ReportFail2ban)
+    let ufw = generateIncidentReport([cluster], ReportUfw)
+    let ipt = generateIncidentReport([cluster], ReportIptables)
+
+    check md.contains("# HTTP LogViewer Security Incident Report")
+    check txt.contains("HTTP LOGVIEWER SECURITY INCIDENT REPORT")
+    check f2b.contains("fail2ban-client")
+    check ufw.contains("ufw deny")
+    check ipt.contains("iptables -A")
+
+suite "Actor Group Table Formatting & Edge Cases (Phase 06 / Category C / Item 05)":
+  test "Item 05: Nil cluster in openArray is handled safely":
+    let valid = newActorCluster(clusterId = "VALID", aggregateRisk = 50)
+    let sorted = sortClustersByRisk([valid, nil])
+    check sorted.len == 1
+    check sorted[0].clusterId == "VALID"
+
+  test "Item 05: Multi-country cluster accurately summarizes country count":
+    var ips = initHashSet[string]()
+    ips.incl("8.8.8.8")       # US
+    ips.incl("78.46.1.1")     # DE (Hetzner)
+    ips.incl("82.168.1.1")    # NL
+    let cluster = newActorCluster(clusterId = "A-MULTI", ips = ips, aggregateRisk = 80, category = CategoryBadActorHacker)
+
+    let card = renderActorClusterCard(cluster, colorize = false, useEmoji = true)
+    check card.contains("3 IPs across 3 countries")
+    check card.contains("US - United States")
+    check card.contains("DE - Germany")
+    check card.contains("NL - Netherlands")
+
+  test "Item 05: Private LAN IPs displayed with house emoji and LAN label":
+    var ips = initHashSet[string]()
+    ips.incl("192.168.1.50")
+    let cluster = newActorCluster(clusterId = "A-LAN", ips = ips, aggregateRisk = 30, category = CategorySuspicious)
+
+    let card = renderActorClusterCard(cluster, colorize = false, useEmoji = true)
+    check card.contains("🏠 LO - Local / Private LAN")
+
 
 
 
