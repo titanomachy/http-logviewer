@@ -56,5 +56,7 @@ task clean, "Clean all build artifacts":
     rmFile "build/t_flags"
   if fileExists("build/t_bogon_private_ip"):
     rmFile "build/t_bogon_private_ip"
+  if fileExists("build/t_signatures"):
+    rmFile "build/t_signatures"
   if fileExists("build/test_all"):
     rmFile "build/test_all"

