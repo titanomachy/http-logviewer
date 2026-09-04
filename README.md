@@ -85,6 +85,7 @@ High-performance HTTP log viewer and rogue bot detector written in Nim. `http_lo
   - [Streaming Ingestion & Pipe Support](#5-streaming-ingestion--pipe-support)
   - [Parsing Fault-Tolerance & Edge Cases](#6-parsing-fault-tolerance--edge-cases)
   - [IP-to-Country Lookup & GeoIP Enrichment](#7-ip-to-country-lookup--geoip-enrichment)
+  - [Unicode Regional Indicator Flags & Country Metadata](#8-unicode-regional-indicator-flags--country-metadata)
 - [Examples](#examples)
 - [Development and Documentation](#development-and-documentation)
 - [Attribution and License](#attribution-and-license)
@@ -134,6 +135,7 @@ The library exposes clean, type-safe Nim APIs organized into modular layers:
 | [Streaming Ingestion & Pipe Support](#5-streaming-ingestion--pipe-support) | `http_logviewer/parser/engine` | `StreamReader`, `readLineFollow`, `streamLogLines`, `streamRawLines`, `benchmarkParsingThroughput` | Low-allocation streaming ingestion, live file tailing (`-f`), transparent `.log.gz` decompression, and $O(1)$ memory bounds |
 | [Parsing Fault-Tolerance & Edge Cases](#6-parsing-fault-tolerance--edge-cases) | `http_logviewer/parser/formats`, `http_logviewer/parser/engine` | `sanitizeUtf8`, `sanitizeControlChars`, `cleanIpAddress`, `normalizeLogDateString`, `ParsingDiagnostics` | Sanitization of invalid UTF-8 bytes and ANSI escapes, interior quote recovery, IPv4/IPv6 port stripping, multi-locale timestamps, and streaming diagnostics |
 | [IP-to-Country Lookup & GeoIP](#7-ip-to-country-lookup--geoip-enrichment) | `http_logviewer/enrichment/geoip`, `http_logviewer/enrichment/flags` | `GeoIpProvider`, `GeoIpEngine`, `MmdbGeoIpProvider`, `CidrGeoIpProvider`, `LruCache`, `isoToFlagEmoji` | High-performance IP geolocation, offline MMDB parser, fallback CIDR database, LRU memory cache, and automatic database discovery |
+| [Unicode Flags & Country Metadata](#8-unicode-regional-indicator-flags--country-metadata) | `http_logviewer/enrichment/flags` | `isoToFlagEmoji`, `getCountryName`, `IsoCountryCodes`, `flagTerminalFallback`, `formatCountryFlag`, `formatCountryBadge` | Algorithmic ISO-3166-1 flag emoji generation, 249 English country names, special pseudo-code mapping (EU, AP, A1, A2, T1), and terminal ASCII fallback |
 | Error Hierarchy | `http_logviewer/core/errors` | `HttpLogViewerError`, `ParseError`, `ThreatAnalysisError`, `ConfigError` | Robust exception hierarchy derived from `CatchableError` |
 
 ---
@@ -481,6 +483,58 @@ nim r --path:src examples/ip_to_country_lookup.nim
 
 ---
 
+### 8. Unicode Regional Indicator Flags & Country Metadata
+
+Provides mathematical 2-letter ISO-to-flag emoji conversion, static English country name dictionary covering all 249 ISO 3166-1 alpha-2 territories, special GeoIP pseudo-codes, and terminal ASCII fallback:
+
+- **Algorithmic Regional Indicator Conversion**: Mathematically transforms any 2-letter ISO 3166-1 alpha-2 country code (`US`, `DE`, `NL`, `JP`, etc.) into pairs of Unicode Regional Indicator Symbols (`U+1F1E6` to `U+1F1FF`) yielding exact 8-byte UTF-8 emoji flags (`🇺🇸`, `🇩🇪`, `🇳🇱`, `🇯🇵`).
+- **Complete ISO-3166-1 Country Name Dictionary**: Static mapping dictionary (`getCountryName`) covering all 249 officially assigned ISO 3166-1 alpha-2 countries and territories, resilient to whitespace and case variations.
+- **Official ISO Code Table**: Exports `IsoCountryCodes` (249 official codes) and validation predicate `isKnownIsoCountryCode`.
+- **Special GeoIP Pseudo-Codes**: Specialized handling for European Union (`EU` -> `🇪🇺`), Asia-Pacific Region (`AP` -> `🌏`), Anonymous Proxies (`A1` -> `🕵️`), Satellite Providers (`A2` -> `🛰️`), Tor Exit Nodes (`T1` -> `🧅`), Other Countries (`O1` -> `🌐`), Local LAN (`LO` / `LAN` / `LOCAL` -> `🏠`), United Kingdom alias (`UK` -> `🇬🇧`), and Unknown (`XX` / `??` -> `🌐`), along with `isSpecialOrPseudoCode`.
+- **Terminal Fallback for ASCII / Plain Terminals**: Robust fallback routines (`flagTerminalFallback`, `formatCountryFlag`, `formatCountryBadge`, `terminalSupportsEmoji`) that render bracketed ASCII badges (e.g. `[US] US`, `[LAN] LO`) when emojis are unsupported, `NO_EMOJI=1` is set, or running under `TERM=dumb`.
+
+```nim
+import http_logviewer/enrichment/flags
+
+# 1. Algorithmic ISO code to flag emoji conversion
+assert isoToFlagEmoji("US") == "🇺🇸"
+assert isoToFlagEmoji("de") == "🇩🇪"
+assert isoToFlagEmoji("nl") == "🇳🇱"
+
+# 2. English country name dictionary (all 249 ISO countries supported)
+assert getCountryName("US") == "United States"
+assert getCountryName("DE") == "Germany"
+assert isKnownIsoCountryCode("NL")
+
+# 3. Special GeoIP and security pseudo-codes
+assert isoToFlagEmoji("EU") == "🇪🇺"
+assert isoToFlagEmoji("AP") == "🌏"
+assert isoToFlagEmoji("A1") == "🕵️"
+assert isoToFlagEmoji("T1") == "🧅"
+assert isoToFlagEmoji("LO") == "🏠"
+
+# 4. Terminal fallback rendering
+assert flagTerminalFallback("US") == "[US]"
+assert formatCountryFlag("US", useEmoji = false) == "[US]"
+assert formatCountryBadge("US", useEmoji = true) == "🇺🇸 US"
+assert formatCountryBadge("US", useEmoji = false) == "[US] US"
+```
+
+#### Terminal Demonstration
+
+The recording below demonstrates algorithmic flag conversion, country name dictionary resolution, GeoIP pseudo-codes, and terminal fallback formatting across environments:
+
+![Unicode Country Flags & Metadata](docs/images/flags_and_country_metadata.gif)
+
+> *Source session recording:* [`docs/recordings/flags_and_country_metadata.cast`](docs/recordings/flags_and_country_metadata.cast) *(recorded with Asciinema, rendered via Agg with JetBrainsMono Nerd Font Mono)*.
+
+Compile and run this example:
+```bash
+nim r --path:src examples/flags_and_country_metadata.nim
+```
+
+---
+
 ## Examples
 
 The `examples/` folder provides executable demonstrations of each pipeline layer:
@@ -493,6 +547,7 @@ The `examples/` folder provides executable demonstrations of each pipeline layer
 - [`examples/streaming_and_pipe_ingestion.nim`](examples/streaming_and_pipe_ingestion.nim): High-performance streaming ingestion, live file tailing (`-f/--follow`), transparent `.log.gz` archive reading, and $O(1)$ memory processor.
 - [`examples/parsing_fault_tolerance.nim`](examples/parsing_fault_tolerance.nim): Robust parsing fault-tolerance, byte and quote sanitization, IPv4/IPv6 address normalization, multi-locale timestamps, and streaming diagnostics.
 - [`examples/ip_to_country_lookup.nim`](examples/ip_to_country_lookup.nim): Comprehensive IP-to-Country geolocation, offline CIDR lookups, MaxMind MMDB parsing, LRU cache benchmarks, and bogon LAN detection.
+- [`examples/flags_and_country_metadata.nim`](examples/flags_and_country_metadata.nim): Algorithmic ISO country flag emojis, 249 country name resolutions, security pseudo-codes, and terminal ASCII fallback.
 - [`examples/pipeline_scaffolding.nim`](examples/pipeline_scaffolding.nim): Cross-module pipeline event envelope demonstration.
 
 ---

@@ -102,3 +102,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added comprehensive unit and integration test suite in `tests/t_geoip.nim` verifying provider dispatch, synthetic MMDB parsing, CIDR lookups, private IP classification, LRU eviction, and benchmark latency.
 - Created standalone runnable code example in `examples/ip_to_country_lookup.nim`.
 - Recorded terminal asciicast (`docs/recordings/ip_to_country_lookup.cast`) and rendered high-resolution animated demo GIF (`docs/images/ip_to_country_lookup.gif`) with Asciinema and Agg.
+
+##### Category B: Unicode Flag Emoji & Country Metadata
+- Implemented algorithmic ISO 3166-1 alpha-2 to Unicode regional indicator symbol converter (`isoToFlagEmoji`) mathematically transforming 2-letter codes into 8-byte UTF-8 emoji flags (`US` -> `🇺🇸`, `DE` -> `🇩🇪`, `NL` -> `🇳🇱`).
+- Implemented static English country name mapping dictionary (`getCountryName`) covering all 249 official ISO 3166-1 alpha-2 countries and territories with whitespace trimming and case insensitivity.
+- Exported constant `IsoCountryCodes` containing all 249 official ISO 3166-1 alpha-2 codes and validation predicate `isKnownIsoCountryCode`.
+- Implemented robust handling for special GeoIP and security pseudo-codes (`EU` -> `🇪🇺`, `AP` -> `🌏`, `A1` -> `🕵️`, `A2` -> `🛰️`, `T1` -> `🧅`, `O1` -> `🌐`, `LO` -> `🏠`, `UK` -> `🇬🇧`, `XX` -> `🌐`), along with `isSpecialOrPseudoCode`.
+- Implemented terminal fallback routines for plain-text, dumb, and restricted console environments (`flagTerminalFallback`, `formatCountryFlag`, `formatCountryBadge`, `terminalSupportsEmoji`), respecting `NO_EMOJI` and `TERM=dumb`.
+- Created comprehensive unit test suite in `tests/t_flags.nim` validating algorithmic flag generation, mathematical codepoints, all 249 ISO codes, pseudo-codes, terminal fallbacks, and environment overrides.
+- Created standalone runnable code example in `examples/flags_and_country_metadata.nim`.
+- Recorded terminal asciicast (`docs/recordings/flags_and_country_metadata.cast`) and rendered animated demo GIF (`docs/images/flags_and_country_metadata.gif`) with Asciinema and Agg using JetBrainsMono Nerd Font Mono.
+

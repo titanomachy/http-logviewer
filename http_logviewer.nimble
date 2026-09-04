@@ -52,5 +52,7 @@ task clean, "Clean all build artifacts":
     rmFile "build/t_stream_engine"
   if fileExists("build/t_geoip"):
     rmFile "build/t_geoip"
+  if fileExists("build/t_flags"):
+    rmFile "build/t_flags"
   if fileExists("build/test_all"):
     rmFile "build/test_all"

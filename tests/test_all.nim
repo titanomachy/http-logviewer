@@ -10,4 +10,5 @@ import t_config
 import t_parser
 import t_stream_engine
 import t_geoip
+import t_flags
 import test1

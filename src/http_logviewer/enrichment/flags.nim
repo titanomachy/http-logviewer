@@ -1,24 +1,30 @@
 ## Unicode regional indicator flag emoji generation and ISO country metadata.
 ## Maps 2-letter ISO 3166-1 alpha-2 country codes to Unicode flag emoji and English country names.
 
-import std/[strutils, unicode]
+import std/[strutils, unicode, os]
 
 const
   RegionalIndicatorBase = 0x1F1E6 # UTF-32 codepoint for regional indicator symbol letter '🇦'
   AsciiUpperBase = ord('A')
 
-proc isoToFlagEmoji*(countryCode: string): string =
+func isoToFlagEmoji*(countryCode: string): string =
   ## Converts a 2-letter ISO 3166-1 alpha-2 country code into a Unicode regional indicator flag emoji.
   ## Example: "US" -> "🇺🇸", "DE" -> "🇩🇪", "NL" -> "🇳🇱".
   ## Returns fallback icon for private ("LO"), special, or invalid codes.
-  if countryCode.len != 2:
-    return "🌐"
-  
-  let upper = countryCode.toUpperAscii()
-  case upper
-  of "LO", "LAN", "LOCAL":
+  let cleaned = countryCode.strip().toUpperAscii()
+  if cleaned.len != 2:
+    case cleaned
+    of "LAN", "LOCAL":
+      return "🏠"
+    of "???", "UNKNOWN":
+      return "🌐"
+    else:
+      return "🌐"
+
+  case cleaned
+  of "LO":
     return "🏠"
-  of "XX", "??":
+  of "XX", "??", "O1":
     return "🌐"
   of "T1": # Tor Exit Node
     return "🧅"
@@ -26,11 +32,18 @@ proc isoToFlagEmoji*(countryCode: string): string =
     return "🕵️"
   of "A2": # Satellite Provider
     return "🛰️"
+  of "AP": # Asia-Pacific Region
+    return "🌏"
+  of "EU": # European Union
+    return "\u{1F1EA}\u{1F1FA}" # 🇪🇺
+  of "UK": # Exceptionally reserved ISO code for United Kingdom (GB)
+    return "\u{1F1EC}\u{1F1E7}" # 🇬🇧
   else:
     discard
 
-  let c1 = upper[0]
-  let c2 = upper[1]
+
+  let c1 = cleaned[0]
+  let c2 = cleaned[1]
 
   if c1 notin 'A'..'Z' or c2 notin 'A'..'Z':
     return "🌐"
@@ -40,9 +53,48 @@ proc isoToFlagEmoji*(countryCode: string): string =
 
   result = toUTF8(Rune(codePoint1)) & toUTF8(Rune(codePoint2))
 
-proc getCountryName*(countryCode: string): string =
+
+const
+  IsoCountryCodes*: array[249, string] = [
+    "AD", "AE", "AF", "AG", "AI", "AL", "AM", "AO", "AQ", "AR", "AS", "AT", "AU", "AW", "AX", "AZ",
+    "BA", "BB", "BD", "BE", "BF", "BG", "BH", "BI", "BJ", "BL", "BM", "BN", "BO", "BQ", "BR", "BS", "BT", "BV", "BW", "BY", "BZ",
+    "CA", "CC", "CD", "CF", "CG", "CH", "CI", "CK", "CL", "CM", "CN", "CO", "CR", "CU", "CV", "CW", "CX", "CY", "CZ",
+    "DE", "DJ", "DK", "DM", "DO", "DZ",
+    "EC", "EE", "EG", "EH", "ER", "ES", "ET",
+    "FI", "FJ", "FK", "FM", "FO", "FR",
+    "GA", "GB", "GD", "GE", "GF", "GG", "GH", "GI", "GL", "GM", "GN", "GP", "GQ", "GR", "GS", "GT", "GU", "GW", "GY",
+    "HK", "HM", "HN", "HR", "HT", "HU",
+    "ID", "IE", "IL", "IM", "IN", "IO", "IQ", "IR", "IS", "IT",
+    "JE", "JM", "JO", "JP",
+    "KE", "KG", "KH", "KI", "KM", "KN", "KP", "KR", "KW", "KY", "KZ",
+    "LA", "LB", "LC", "LI", "LK", "LR", "LS", "LT", "LU", "LV", "LY",
+    "MA", "MC", "MD", "ME", "MF", "MG", "MH", "MK", "ML", "MM", "MN", "MO", "MP", "MQ", "MR", "MS", "MT", "MU", "MV", "MW", "MX", "MY", "MZ",
+    "NA", "NC", "NE", "NF", "NG", "NI", "NL", "NO", "NP", "NR", "NU", "NZ",
+    "OM",
+    "PA", "PE", "PF", "PG", "PH", "PK", "PL", "PM", "PN", "PR", "PS", "PT", "PW", "PY",
+    "QA",
+    "RE", "RO", "RS", "RU", "RW",
+    "SA", "SB", "SC", "SD", "SE", "SG", "SH", "SI", "SJ", "SK", "SL", "SM", "SN", "SO", "SR", "SS", "ST", "SV", "SX", "SY", "SZ",
+    "TC", "TD", "TF", "TG", "TH", "TJ", "TK", "TL", "TM", "TN", "TO", "TR", "TT", "TV", "TW", "TZ",
+    "UA", "UG", "UM", "US", "UY", "UZ",
+    "VA", "VC", "VE", "VG", "VI", "VN", "VU",
+    "WF", "WS",
+    "YE", "YT",
+    "ZA", "ZM", "ZW"
+  ]
+
+func isKnownIsoCountryCode*(countryCode: string): bool =
+  ## Returns true if countryCode is one of the 249 officially assigned ISO 3166-1 alpha-2 codes.
+  let cleaned = countryCode.strip().toUpperAscii()
+  for code in IsoCountryCodes:
+    if code == cleaned:
+      return true
+  return false
+
+func getCountryName*(countryCode: string): string =
   ## Returns full English country name for an ISO 3166-1 alpha-2 country code.
-  case countryCode.toUpperAscii()
+  let cleaned = countryCode.strip().toUpperAscii()
+  case cleaned
   of "AD": "Andorra"
   of "AE": "United Arab Emirates"
   of "AF": "Afghanistan"
@@ -298,5 +350,81 @@ proc getCountryName*(countryCode: string): string =
   of "A1": "Anonymous Proxy"
   of "A2": "Satellite Provider"
   of "T1": "Tor Exit Node"
+  of "O1": "Other Country"
   of "XX", "??", "": "Unknown Country"
   else: "Unknown Country"
+
+func isSpecialOrPseudoCode*(countryCode: string): bool =
+  ## Returns true if the given code is a special pseudo-code used by GeoIP providers or private networks.
+  let cleaned = countryCode.strip().toUpperAscii()
+  case cleaned
+  of "EU", "AP", "A1", "A2", "T1", "O1", "LO", "LAN", "LOCAL", "XX", "??", "UK":
+    return true
+  else:
+    return false
+
+func flagTerminalFallback*(countryCode: string): string =
+  ## Returns an ASCII/terminal-safe text fallback for environments that do not support
+  ## 2-character wide Unicode flag emojis.
+  let cleaned = countryCode.strip().toUpperAscii()
+  case cleaned
+  of "LO", "LAN", "LOCAL":
+    return "[LAN]"
+  of "XX", "??", "", "???", "UNKNOWN":
+    return "[--]"
+  of "T1":
+    return "[TOR]"
+  of "A1":
+    return "[PROXY]"
+  of "A2":
+    return "[SAT]"
+  of "EU":
+    return "[EU]"
+  of "AP":
+    return "[AP]"
+  of "UK":
+    return "[UK]"
+  of "O1":
+    return "[OTHER]"
+  else:
+    if cleaned.len == 2 and cleaned[0] in 'A'..'Z' and cleaned[1] in 'A'..'Z':
+      return "[" & cleaned & "]"
+    return "[--]"
+
+proc terminalSupportsEmoji*(): bool =
+  ## Detects whether the current terminal environment supports 2-character wide emoji symbols.
+  ## Returns false if NO_EMOJI is set, TERM is 'dumb' or 'raw', or stdout is redirected without unicode support.
+  if getEnv("NO_EMOJI").len > 0:
+    return false
+  let term = getEnv("TERM").toLowerAscii()
+  if term == "dumb" or term == "raw":
+    return false
+  return true
+
+func formatCountryFlag*(countryCode: string, useEmoji: bool = true): string =
+  ## Formats a country code into either a Unicode flag emoji (if useEmoji is true)
+  ## or an ASCII terminal fallback bracketed code (if useEmoji is false).
+  if useEmoji:
+    isoToFlagEmoji(countryCode)
+  else:
+    flagTerminalFallback(countryCode)
+
+func formatCountryBadge*(countryCode: string, useEmoji: bool = true): string =
+  ## Formats a fixed-width country badge suitable for columnar terminal display.
+  ## If useEmoji is true: returns e.g. "🇺🇸 US" (emoji + space + 2-letter code)
+  ## If useEmoji is false: returns e.g. `[US] US` or `[LAN] LO`
+  let cleaned = countryCode.strip().toUpperAscii()
+  let code = if cleaned.len == 2:
+               cleaned
+             elif cleaned in ["LAN", "LOCAL"]:
+               "LO"
+             elif cleaned.len > 0:
+               cleaned[0..min(1, cleaned.len - 1)]
+             else:
+               "--"
+  if useEmoji:
+    return isoToFlagEmoji(cleaned) & " " & code
+  else:
+    return flagTerminalFallback(cleaned) & " " & code
+
+
