@@ -1530,4 +1530,3 @@ All build targets, intermediate C files, and generated HTML documentation reside
 ## Attribution and License
 
 - Licensed under the [MIT License](LICENSE).
-- Developed in Nim for maximum throughput, low memory footprint, and high-visibility terminal security auditing.
