@@ -33,6 +33,7 @@ type
     countryCodes*: seq[string]
     geoDbPath*: Option[string]
     enableGrouping*: bool
+    showVhost*: bool
     correlationWindowSeconds*: Option[int]
     helpRequested*: bool
     versionRequested*: bool
@@ -55,16 +56,17 @@ proc helpText*(): string =
 Usage:
   http_logviewer [options] [LOGFILE]
   tail -f /var/log/nginx/access.log | http_logviewer [options]
-  cat /var/log/apache2/access.log | http_logviewer --filter=hacker --no-color
+  cat /var/log/apache2/access.log | http_logviewer --filter=cracker --no-color
 
 Arguments:
   LOGFILE                         Path to HTTP access log file (use '-' for standard input)
 
 Options:
   -f, --follow                    Continuously follow the log file as new lines are appended
-  --filter=<category>             Filter by visitor category: 'real', 'bot', 'scraper', 'hacker', 'suspicious', 'all'
+  --filter=<category>             Filter by visitor category: 'real', 'bot', 'scraper', 'cracker', 'suspicious', 'all'
   -m, --min-score=<0-100>         Only display requests with risk score >= threshold
   -g, --group-actors              Correlate and group multi-IP requests by actor / botnet
+  --vhost                         Display virtual host / website column in streaming output
   --status=<codes>                Filter by HTTP status codes (comma-separated, e.g. '404,500')
   --country=<codes>               Filter by ISO country codes (comma-separated, e.g. 'US,DE,NL')
   --geoip-db=<path>               Path to custom MaxMind GeoIP MMDB database file
@@ -81,7 +83,7 @@ Options:
 Examples:
   http_logviewer /var/log/nginx/access.log
   http_logviewer -f /var/log/nginx/access.log --status=404,500
-  tail -f /var/log/nginx/access.log | http_logviewer --filter=hacker
+  tail -f /var/log/nginx/access.log | http_logviewer --filter=cracker
   http_logviewer --group-actors --min-score=50 access.log
   cat access.log | http_logviewer --json > enriched_events.ndjson
 
@@ -107,6 +109,7 @@ proc initCliOptions*(): CliOptions =
     countryCodes: @[],
     geoDbPath: none(string),
     enableGrouping: false,
+    showVhost: false,
     correlationWindowSeconds: none(int),
     helpRequested: false,
     versionRequested: false
@@ -121,9 +124,9 @@ proc parseCategoryString*(val: string): Option[ActorCategory] =
   of "friendly", "crawler", "friendlycrawler": some(CategoryFriendlyCrawler)
   of "scraper", "commercial", "commercialbot": some(CategoryCommercialBot)
   of "suspicious", "scanner": some(CategorySuspicious)
-  of "hacker", "badactor", "exploit": some(CategoryBadActorHacker)
+  of "hacker", "cracker", "badactor", "exploit": some(CategoryBadActorHacker)
   else:
-    raise newException(ConfigError, "Unknown filter category: '" & val & "'. Supported: real, bot, friendly, scraper, suspicious, hacker, all")
+    raise newException(ConfigError, "Unknown filter category: '" & val & "'. Supported: real, bot, friendly, scraper, suspicious, cracker, hacker, all")
 
 proc parseCliArgs*(args: openArray[string]): CliOptions =
   ## Parses raw command-line tokens into structured CliOptions.
@@ -132,7 +135,7 @@ proc parseCliArgs*(args: openArray[string]): CliOptions =
   var p = initOptParser(
     @args,
     shortNoVal = {'f', 'g', 'h', 'v'},
-    longNoVal = @["follow", "group-actors", "group", "no-color", "nocolor", "json", "help", "version"]
+    longNoVal = @["follow", "group-actors", "group", "no-color", "nocolor", "json", "vhost", "show-vhost", "website", "help", "version"]
   )
 
   proc fetchValue(p: var OptParser, optName: string): string =
@@ -225,6 +228,8 @@ proc parseCliArgs*(args: openArray[string]): CliOptions =
           result.correlationWindowSeconds = some(secs)
         except ValueError:
           raise newException(ConfigError, "Invalid integer for --window: '" & val & "'")
+      of "vhost", "show-vhost", "website":
+        result.showVhost = true
       of "h", "help":
         result.helpRequested = true
       of "v", "version":
@@ -309,6 +314,9 @@ proc toViewerConfig*(opts: CliOptions): ViewerConfig =
   
   if opts.enableGrouping:
     result.enableGrouping = true
+  
+  if opts.showVhost:
+    result.showVhost = true
   
   if opts.correlationWindowSeconds.isSome:
     result.correlationWindowSeconds = opts.correlationWindowSeconds.get()

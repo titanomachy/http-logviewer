@@ -9,7 +9,7 @@
 
 import std/[strutils, times, options, tables, math]
 import ../core/types
-import signatures, useragents
+import signatures, useragents, bot_verification
 
 # ==============================================================================
 # Pipeline Hello Placeholder (Maintained for backward compatibility)
@@ -388,15 +388,20 @@ func evaluateThreat*(
 
   # 2. Path & Query Attack Signatures
   let (sigFlags, sigRules) = analyzeAttackPayload(entry.path)
-  let hasSevereExploit = (ThreatSqlInjection in sigFlags) or
-                         (ThreatCommandInjection in sigFlags) or
-                         (ThreatDirectoryTraversal in sigFlags) or
-                         (ThreatSensitiveFile in sigFlags)
+  let hasExploitPayload = sigFlags.len > 0 or isCmsExploit(entry.path)
+  let isTargetingAdmin = isAdministrativePath(entry.path)
 
-  # 3. Verified search engine / friendly crawler fast path
-  # Verified bots browsing legitimately are not flagged even on accidental 404s,
-  # unless an explicit severe exploit payload is present in the request path.
-  if uaClass.category in {CategoryVerifiedBot, CategoryFriendlyCrawler} and not hasSevereExploit:
+  # 3. Crawler IP verification
+  var botStatus = BotIpVerified
+  var isClaimingCrawler = false
+  if uaClass.category in {CategoryVerifiedBot, CategoryFriendlyCrawler}:
+    isClaimingCrawler = true
+    botStatus = verifyCrawlerIp(uaClass.matchedRule, entry.clientIp)
+
+  # 4. Verified search engine / friendly crawler fast path
+  # Verified bots browsing legitimately from verified or local/test IPs are not flagged even on accidental 404s,
+  # but ANY attempt to access exploit payloads or administrative paths revokes verified status.
+  if isClaimingCrawler and not hasExploitPayload and not isTargetingAdmin and botStatus != BotIpSpoofed:
     return initThreatProfile(
       score = 0,
       category = uaClass.category,
@@ -414,12 +419,27 @@ func evaluateThreat*(
   if uaClass.matchedRule.len > 0:
     matchedRules.add("UA:" & uaClass.matchedRule)
 
+  # Bot Impersonation detection
+  if isClaimingCrawler:
+    if botStatus == BotIpSpoofed:
+      flags.incl(ThreatBotImpersonation)
+      if hasExploitPayload or isTargetingAdmin:
+        score += 85
+        matchedRules.add("FakeBot:ExploitWhileSpoofingCrawler(" & entry.clientIp & ")")
+      else:
+        score += 40
+        matchedRules.add("FakeBot:SpoofedCrawlerIp(" & entry.clientIp & ")")
+    elif hasExploitPayload or isTargetingAdmin:
+      flags.incl(ThreatBotImpersonation)
+      score += 70
+      matchedRules.add("FakeBot:ExploitUnderCrawlerMask")
+
   # Add Attack Signature component
   if ThreatSensitiveFile in sigFlags: score += 60
   if ThreatCommandInjection in sigFlags: score += 75
   if ThreatSqlInjection in sigFlags: score += 70
   if ThreatDirectoryTraversal in sigFlags: score += 65
-  if ThreatCmsExploit in sigFlags: score += 45
+  if ThreatCmsExploit in sigFlags: score += 55
   flags = flags + sigFlags
   for r in sigRules:
     matchedRules.add(r)
@@ -449,7 +469,9 @@ func evaluateThreat*(
   let finalScore = clamp(score, 0, 100)
 
   # Map score to ActorCategory
-  let category = scoreToActorCategory(finalScore, uaClass.category)
+  # If bot impersonation was detected, do not grant VerifiedBot/FriendlyCrawler
+  let effectiveUaCategory = if ThreatBotImpersonation in flags: CategorySuspicious else: uaClass.category
+  let category = scoreToActorCategory(finalScore, effectiveUaCategory)
 
   return initThreatProfile(
     score = finalScore,

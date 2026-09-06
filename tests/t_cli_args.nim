@@ -52,6 +52,7 @@ suite "CLI Options & Argument Parser - Options Parsing (Phase 07 / Category A / 
     check parseCommandLine(["--filter=real"]).filterCategory == some(CategoryRealUser)
     check parseCommandLine(["--filter=bot"]).filterCategory == some(CategoryVerifiedBot)
     check parseCommandLine(["--filter=scraper"]).filterCategory == some(CategoryCommercialBot)
+    check parseCommandLine(["--filter=cracker"]).filterCategory == some(CategoryBadActorHacker)
     check parseCommandLine(["--filter=hacker"]).filterCategory == some(CategoryBadActorHacker)
     check parseCommandLine(["--filter=all"]).filterCategory.isNone
 
@@ -78,6 +79,16 @@ suite "CLI Options & Argument Parser - Options Parsing (Phase 07 / Category A / 
 
     let cfgGroupShort = parseCommandLine(["-g"])
     check cfgGroupShort.enableGrouping == true
+
+  test "Item 01: Vhost flag enables website / virtual host column display":
+    let cfgDefault = parseCommandLine([])
+    check cfgDefault.showVhost == false
+
+    let cfgVhost = parseCommandLine(["--vhost"])
+    check cfgVhost.showVhost == true
+
+    let cfgWebsite = parseCommandLine(["--website"])
+    check cfgWebsite.showVhost == true
 
   test "Item 01: Status codes filtering with comma-separated and single values":
     let cfgMulti = parseCommandLine(["--status=404,500,502"])

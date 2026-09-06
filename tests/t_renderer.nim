@@ -148,13 +148,13 @@ suite "Intent Category Badges (Phase 06 / Category A / Item 04)":
     check formatIntentBadge(CategorySuspicious, colorize = false) == "[SUSPICIOUS]"
 
   test "Item 04: BadActorHacker intent badge formatting":
-    check formatIntentBadge(CategoryBadActorHacker, colorize = true) == "\e[41;97;1m[ HACKER! ]\e[0m"
-    check formatIntentBadge(CategoryBadActorHacker, colorize = false) == "[ HACKER! ]"
+    check formatIntentBadge(CategoryBadActorHacker, colorize = true) == "\e[41;97;1m[ CRACKER!]\e[0m"
+    check formatIntentBadge(CategoryBadActorHacker, colorize = false) == "[ CRACKER!]"
 
   test "Item 04: ThreatProfile intent badge overload matches category":
     let threat = initThreatProfile(score = 85, category = CategoryBadActorHacker)
-    check formatIntentBadge(threat, colorize = true) == "\e[41;97;1m[ HACKER! ]\e[0m"
-    check formatIntentBadge(threat, colorize = false) == "[ HACKER! ]"
+    check formatIntentBadge(threat, colorize = true) == "\e[41;97;1m[ CRACKER!]\e[0m"
+    check formatIntentBadge(threat, colorize = false) == "[ CRACKER!]"
 
 suite "Country Flag & Code Column Formatting (Phase 06 / Category A / Item 05)":
   test "Item 05: formatCountryColumn formats emoji flags into aligned 7-width column":
@@ -188,8 +188,8 @@ suite "ANSI Escape Sequences & String Width Calculations (Phase 06 / Category A 
   test "Item 06: ANSI escape sequences have 0 visual display width":
     let badge = "\e[41;97;1m 404 \e[0m"
     check terminalDisplayWidth(badge) == 5 # " 404 " is 5 chars
-    let hackerBadge = "\e[41;97;1m[ HACKER! ]\e[0m"
-    check terminalDisplayWidth(hackerBadge) == 11 # "[ HACKER! ]" is 11 chars
+    let hackerBadge = "\e[41;97;1m[ CRACKER!]\e[0m"
+    check terminalDisplayWidth(hackerBadge) == 11 # "[ CRACKER!]" is 11 chars
 
   test "Item 06: Unicode regional indicator flag emojis have width 2":
     check terminalDisplayWidth("🇺🇸") == 2
@@ -230,14 +230,14 @@ suite "ANSI Escape Sequences & String Width Calculations (Phase 06 / Category A 
     check coloredLine.contains("13:55:02")
     check coloredLine.contains("🇩🇪 DE")
     check coloredLine.contains("\e[41;97;1m 404 \e[0m")
-    check coloredLine.contains("\e[41;97;1m[ HACKER! ]\e[0m")
+    check coloredLine.contains("\e[41;97;1m[ CRACKER!]\e[0m")
     check coloredLine.contains("194.26.29.112")
     check coloredLine.contains("GET /.env")
 
     let monoLine = renderStreamLine(record, colorize = false, useEmoji = false)
     check not monoLine.contains("\e[")
     check monoLine.contains("[ 404 ]") or monoLine.contains(" 404 ")
-    check monoLine.contains("[ HACKER! ]")
+    check monoLine.contains("[ CRACKER!]")
     check monoLine.contains("[DE] DE")
 
 suite "Formatted Stream Line Output & Headers (Phase 06 / Category B / Item 01)":
@@ -260,6 +260,19 @@ suite "Formatted Stream Line Output & Headers (Phase 06 / Category B / Item 01)"
     let headerNoUa = renderStreamHeader(colorize = false, includeUserAgent = false)
     check headerNoUa.contains("METHOD PATH")
     check not headerNoUa.contains("USER-AGENT")
+
+  test "Item 01: renderStreamHeader with includeVhost includes WEBSITE column":
+    let headerVhost = renderStreamHeader(colorize = false, includeUserAgent = true, includeVhost = true)
+    check headerVhost.contains("CLIENT IP")
+    check headerVhost.contains("WEBSITE")
+    check headerVhost.contains("METHOD PATH")
+
+  test "Item 01: cleanVhost helper strips standard ports :80 and :443":
+    check cleanVhost("pims-international.com:443") == "pims-international.com"
+    check cleanVhost("example.com:80") == "example.com"
+    check cleanVhost("localhost:8080") == "localhost:8080"
+    check cleanVhost("  site.org  ") == "site.org"
+    check cleanVhost("") == ""
 
   test "Item 01: renderStreamSeparator outputs rule of requested length":
     let sep80 = renderStreamSeparator(80, '-')
@@ -314,6 +327,30 @@ suite "Formatted Stream Line Output & Headers (Phase 06 / Category B / Item 01)"
     check lineNoUa.contains("66.249.66.1")
     check lineNoUa.contains("GET /robots.txt")
     check not lineNoUa.contains("Googlebot")
+
+  test "Item 01: renderStreamLine with vhost includes both client IP and website domain":
+    let entry = initHttpLogEntry(
+      vhost = "pims-international.com:443",
+      clientIp = "34.88.50.240",
+      timestamp = parse("2026-09-05 22:54:36", "yyyy-MM-dd HH:mm:ss"),
+      `method` = HttpGet,
+      path = "/actuator/env",
+      statusCode = 301,
+      userAgent = "crusader-worker/1.0"
+    )
+    let geo = initGeoLocation(countryCode = "US", flagEmoji = "🇺🇸")
+    let threat = initThreatProfile(score = 80, category = CategoryBadActorHacker)
+    let record = initEnrichedLogRecord(entry = entry, geo = geo, threat = threat)
+
+    var opts = defaultStreamFormatOptions()
+    opts.colorize = false
+    opts.useEmoji = false
+
+    let line = renderStreamLine(record, opts)
+    check line.contains("34.88.50.240")
+    check line.contains("pims-international.com")
+    check line.contains("GET /actuator/env")
+    check line.contains("crusader-worker/1.0")
 
 suite "Column Truncation & Path Shortening (Phase 06 / Category B / Item 02)":
   test "Item 02: shortenPath middle-truncates long URIs":
@@ -450,7 +487,7 @@ suite "Live Status Ticker & Summary Banner (Phase 06 / Category B / Item 03)":
     check monoTicker.contains("[STATUS]")
     check monoTicker.contains("Parsed: 2")
     check monoTicker.contains("Real: 1")
-    check monoTicker.contains("Hackers: 1")
+    check monoTicker.contains("Crackers: 1")
     check monoTicker.contains("/.env (1)")
     check not monoTicker.contains("\e[")
 
@@ -468,7 +505,7 @@ suite "Live Status Ticker & Summary Banner (Phase 06 / Category B / Item 03)":
     check banner.contains("HTTP LOGVIEWER - SESSION TRAFFIC SUMMARY")
     check banner.contains("Total Lines Ingested : 1")
     check banner.contains("Unique Client IPs    : 1")
-    check banner.contains("Rogue Hackers        : 1")
+    check banner.contains("Rogue Crackers       : 1")
     check banner.contains("Total 404 Responses  : 1")
     check banner.contains("/.env (1 requests)")
 
@@ -769,7 +806,7 @@ suite "Grouped Actor Summary Table (Phase 06 / Category C / Item 01)":
     check wideTable.contains("DURATION")
     check wideTable.contains("ACTOR-7F3A")
     check wideTable.contains("[Actor #1: 2 IPs - WP-Scan Botnet]")
-    check wideTable.contains("[ HACKER! ] 95")
+    check wideTable.contains("[ CRACKER!] 95")
     check wideTable.contains("48")
     check wideTable.contains("08m 33s")
     check wideTable.contains("=")
@@ -790,7 +827,7 @@ suite "Grouped Actor Summary Table (Phase 06 / Category C / Item 01)":
     for line in compactTable.splitLines():
       check terminalDisplayWidth(line) <= 80
     check compactTable.contains("ACTOR-B2A4")
-    check compactTable.contains("[ HACKER! ] 90")
+    check compactTable.contains("[ CRACKER!] 90")
 
   test "Item 01: renderGroupedSummaryTable with empty cluster set produces informative banner":
     let emptyTable = renderGroupedSummaryTable(@[], colorize = false, maxWidth = 80)
@@ -838,7 +875,7 @@ suite "Actor Cluster Card Display (Phase 06 / Category C / Item 02)":
 
     let card = renderActorClusterCard(cluster, colorize = false, useEmoji = true, width = 80)
     check card.contains("CRITICAL ACTOR CLUSTER: [ACTOR-7F3A] - WordPress & Secret Probe Botnet")
-    check card.contains("Risk Level      : [ HACKER! ] (Score: 95/100)")
+    check card.contains("Risk Level      : [ CRACKER!] (Score: 95/100)")
     check card.contains("Total Requests  : 48 requests (48 x [ 404 ])")
     check card.contains("Distinct IPs    : 6 IPs across")
     check card.contains("45.154.255.8")

@@ -184,6 +184,11 @@ proc runPipeline*(
     if shouldStopHook != nil and shouldStopHook(): return true
     return false
 
+  var seenVhost = false
+  var streamOpts = defaultStreamFormatOptions()
+  streamOpts.colorize = cfg.colorOutput
+  streamOpts.includeVhost = cfg.showVhost
+
   let stats = streamLogLines(
     sourcePath = cfg.logFilePath,
     follow = cfg.follow,
@@ -191,6 +196,10 @@ proc runPipeline*(
     shouldStop = shouldStop,
     onEntry = proc(entry: HttpLogEntry) =
       if not keepRunning: return
+
+      if entry.vhost.len > 0:
+        seenVhost = true
+        streamOpts.includeVhost = true
 
       let geo = geoEngine.lookup(entry.clientIp)
       let threat = evaluateThreat(entry)
@@ -208,7 +217,7 @@ proc runPipeline*(
       if cfg.outputFormat == FormatJson:
         writeOut(renderJsonStreamLine(record))
       else:
-        writeOut(renderStreamLine(record, cfg.colorOutput))
+        writeOut(renderStreamLine(record, streamOpts))
   )
 
   # Display session summary banner unless in JSON mode

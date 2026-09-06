@@ -161,6 +161,42 @@ suite "Log Parsing - Nginx & Apache Combined Log Format (Phase 02 / Category A /
     check entry.referer == "https://dashboard.example.com"
     check entry.userAgent == "curl/7.88.1"
 
+  test "Item 02: parseCombinedLine parses Apache vhost_combined with port":
+    let line = "www.bunakenseagardenresort.com:443 49.13.164.148 - - [05/Sep/2026:22:46:24 +0200] \"HEAD /en/ HTTP/2.0\" 200 24 \"https://www.bunakenseagardenresort.com\" \"Mozilla/5.0+(compatible; UptimeRobot/2.0; http://www.uptimerobot.com/)\""
+    var entry: HttpLogEntry
+    check parseCombinedLine(line, entry)
+    check entry.vhost == "www.bunakenseagardenresort.com:443"
+    check entry.clientIp == "49.13.164.148"
+    check entry.`method` == HttpHead
+    check entry.path == "/en/"
+    check entry.statusCode == 200
+    check entry.bytesSent == 24
+    check entry.referer == "https://www.bunakenseagardenresort.com"
+    check entry.userAgent == "Mozilla/5.0+(compatible; UptimeRobot/2.0; http://www.uptimerobot.com/)"
+
+  test "Item 02: parseCombinedLine parses Apache vhost without port and IPv6 client":
+    let line1 = "pims-international.com 34.88.50.240 - - [05/Sep/2026:22:54:36 +0200] \"GET / HTTP/2.0\" 301 393 \"-\" \"curl/7.88.1\""
+    var e1: HttpLogEntry
+    check parseCombinedLine(line1, e1)
+    check e1.vhost == "pims-international.com"
+    check e1.clientIp == "34.88.50.240"
+    check e1.statusCode == 301
+
+    let line2 = "example.com:443 2001:db8::1 - - [05/Sep/2026:22:54:36 +0200] \"GET / HTTP/1.1\" 200 1024 \"-\" \"curl/7.88.1\""
+    var e2: HttpLogEntry
+    check parseCombinedLine(line2, e2)
+    check e2.vhost == "example.com:443"
+    check e2.clientIp == "2001:db8::1"
+    check e2.statusCode == 200
+
+  test "Item 02: parseClfLine parses virtual host prefix":
+    let line = "vhost.example.com:80 192.168.1.50 - frank [10/Oct/2026:13:55:36 -0700] \"POST /api/login HTTP/1.0\" 401 512"
+    var entry: HttpLogEntry
+    check parseClfLine(line, entry)
+    check entry.vhost == "vhost.example.com:80"
+    check entry.clientIp == "192.168.1.50"
+    check entry.statusCode == 401
+
   test "Item 02: parseCombinedLine returns false on malformed lines":
     var entry: HttpLogEntry
     check not parseCombinedLine("", entry)

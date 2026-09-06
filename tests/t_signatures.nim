@@ -66,6 +66,15 @@ suite "Attack Signatures - CMS & Web Admin Exploits (Phase 04 / Category A / Ite
     check isCmsExploit("/telescope/requests")
     check isCmsExploit("/debug/default/view")
 
+  test "Item 02: Detects FCKeditor, CKEditor, and filemanager upload exploit paths":
+    check isCmsExploit("/fckeditor/editor/filemanager/browser/default/browser.html")
+    check isCmsExploit("/en/fckeditor/editor/filemanager/browser/default/browser.html")
+    check isCmsExploit("/admin/editor/filemanager/browser/default/browser.html")
+    check isCmsExploit("/assets/fckeditor/editor/filemanager/connectors/upload.php")
+    check isCmsExploit("/editor/filemanager/connectors/upload.php")
+    check isCmsExploit("/ckeditor/filemanager/browser/default/browser.html")
+    check isCmsExploit("/filemanager/connectors/php/connector.php")
+
   test "Item 02: Normal blog and store paths are NOT flagged as CMS exploits":
     check not isCmsExploit("/blog/my-first-post")
     check not isCmsExploit("/shop/category/shoes")

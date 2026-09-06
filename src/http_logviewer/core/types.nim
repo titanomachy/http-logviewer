@@ -23,6 +23,8 @@ const
   SuspiciousScanner* = CategorySuspicious
   CategorySuspiciousScanner* = CategorySuspicious
   BadActorHacker* = CategoryBadActorHacker
+  BadActorCracker* = CategoryBadActorHacker
+  CategoryBadActorCracker* = CategoryBadActorHacker
 
 type
   ## Standard HTTP Request Methods
@@ -50,6 +52,7 @@ type
     referer*: string
     userAgent*: string
     rawLine*: string        ## Preserved raw line for debug or verbatim display
+    vhost*: string          ## Virtual host / domain if present (e.g. from vhost_combined)
 
   ## Atomic threat indicators detected during analysis
   ThreatFlag* = enum
@@ -61,7 +64,8 @@ type
     ThreatKnownScannerUa,     ## User-Agent identifies offensive tools (sqlmap, nikto)
     ThreatMalformedRequest,   ## Corrupt protocol or impossible HTTP verbs
     ThreatHighRate404,        ## Rapid burst of 404 responses (fuzzing/scanning)
-    ThreatNoAssetFetch        ## Scraping HTML only with zero static assets
+    ThreatNoAssetFetch,       ## Scraping HTML only with zero static assets
+    ThreatBotImpersonation    ## Spoofed search engine bot or exploit probe under bot mask
 
 const
   SensitiveFileProbe* = ThreatSensitiveFile
@@ -73,6 +77,7 @@ const
   MalformedRequest* = ThreatMalformedRequest
   AggressiveRate* = ThreatHighRate404
   NoAssetsRequested* = ThreatNoAssetFetch
+  BotImpersonation* = ThreatBotImpersonation
 
 type
   ## Geolocation enrichment data for an IP address
@@ -179,7 +184,8 @@ func initHttpLogEntry*(
   bytesSent: int64 = 0,
   referer: string = "",
   userAgent: string = "",
-  rawLine: string = ""
+  rawLine: string = "",
+  vhost: string = ""
 ): HttpLogEntry =
   ## Initializes a new HttpLogEntry with default or specified fields.
   HttpLogEntry(
@@ -191,7 +197,8 @@ func initHttpLogEntry*(
     bytesSent: bytesSent,
     referer: referer,
     userAgent: userAgent,
-    rawLine: rawLine
+    rawLine: rawLine,
+    vhost: vhost
   )
 
 func `$`*(entry: HttpLogEntry): string =
@@ -199,12 +206,14 @@ func `$`*(entry: HttpLogEntry): string =
   let tsStr = if not entry.timestamp.isInitialized: "-" else: entry.timestamp.format("yyyy-MM-dd'T'HH:mm:sszzz")
   let refStr = if entry.referer.len > 0: entry.referer else: "-"
   let uaStr = if entry.userAgent.len > 0: entry.userAgent else: "-"
-  result = "[" & tsStr & "] " & entry.clientIp & " " & $entry.`method` & " " & entry.path & " " & $entry.statusCode & " " & $entry.bytesSent & " \"" & refStr & "\" \"" & uaStr & "\""
+  let vhostStr = if entry.vhost.len > 0: entry.vhost & " " else: ""
+  result = "[" & tsStr & "] " & vhostStr & entry.clientIp & " " & $entry.`method` & " " & entry.path & " " & $entry.statusCode & " " & $entry.bytesSent & " \"" & refStr & "\" \"" & uaStr & "\""
 
 func pretty*(entry: HttpLogEntry): string =
   ## Formats the HttpLogEntry as a readable multi-line structured block.
   let tsStr = if not entry.timestamp.isInitialized: "-" else: entry.timestamp.format("yyyy-MM-dd'T'HH:mm:sszzz")
   result = "HttpLogEntry:\n" &
+    (if entry.vhost.len > 0: "  VHost:       " & entry.vhost & "\n" else: "") &
     "  Client IP:   " & (if entry.clientIp.len > 0: entry.clientIp else: "-") & "\n" &
     "  Timestamp:   " & tsStr & "\n" &
     "  Method:      " & $entry.`method` & "\n" &
@@ -226,7 +235,8 @@ proc `%`*(entry: HttpLogEntry): JsonNode =
     "bytesSent": entry.bytesSent,
     "referer": entry.referer,
     "userAgent": entry.userAgent,
-    "rawLine": entry.rawLine
+    "rawLine": entry.rawLine,
+    "vhost": entry.vhost
   }
 
 proc parseHttpLogEntryJson*(n: JsonNode): HttpLogEntry =
@@ -244,6 +254,7 @@ proc parseHttpLogEntryJson*(n: JsonNode): HttpLogEntry =
   let refStr = if n.hasKey("referer") and n["referer"].kind == JString: n["referer"].getStr() else: ""
   let ua = if n.hasKey("userAgent") and n["userAgent"].kind == JString: n["userAgent"].getStr() else: ""
   let raw = if n.hasKey("rawLine") and n["rawLine"].kind == JString: n["rawLine"].getStr() else: ""
+  let vhost = if n.hasKey("vhost") and n["vhost"].kind == JString: n["vhost"].getStr() else: ""
 
   initHttpLogEntry(
     clientIp = ip,
@@ -254,7 +265,8 @@ proc parseHttpLogEntryJson*(n: JsonNode): HttpLogEntry =
     bytesSent = bs,
     referer = refStr,
     userAgent = ua,
-    rawLine = raw
+    rawLine = raw,
+    vhost = vhost
   )
 
 func `==`*(a, b: HttpLogEntry): bool =
@@ -267,7 +279,8 @@ func `==`*(a, b: HttpLogEntry): bool =
     a.bytesSent == b.bytesSent and
     a.referer == b.referer and
     a.userAgent == b.userAgent and
-    a.rawLine == b.rawLine
+    a.rawLine == b.rawLine and
+    a.vhost == b.vhost
 
 func hash*(entry: HttpLogEntry): Hash =
   ## Hash computation enabling HttpLogEntry to be stored in HashSets and Tables.
@@ -283,6 +296,7 @@ func hash*(entry: HttpLogEntry): Hash =
   h = h !& hash(entry.referer)
   h = h !& hash(entry.userAgent)
   h = h !& hash(entry.rawLine)
+  h = h !& hash(entry.vhost)
   result = !$h
 
 func isValid*(entry: HttpLogEntry): bool =
@@ -320,7 +334,7 @@ func parseActorCategory*(s: string): ActorCategory =
   of "FRIENDLYCRAWLER", "FRIENDLY_CRAWLER": CategoryFriendlyCrawler
   of "COMMERCIALBOT", "COMMERCIAL_BOT": CategoryCommercialBot
   of "SUSPICIOUS", "SUSPICIOUSSCANNER", "SUSPICIOUS_SCANNER": CategorySuspicious
-  of "BADACTORHACKER", "BAD_ACTOR_HACKER", "HACKER", "BADACTOR": CategoryBadActorHacker
+  of "BADACTORHACKER", "BAD_ACTOR_HACKER", "HACKER", "BADACTOR", "CRACKER", "BAD_ACTOR_CRACKER", "BADACTORCRACKER": CategoryBadActorHacker
   of "UNKNOWN", "": CategoryUnknown
   else: CategoryUnknown
 
@@ -329,7 +343,11 @@ func isBot*(c: ActorCategory): bool {.inline.} =
   c in {CategoryVerifiedBot, CategoryFriendlyCrawler, CategoryCommercialBot}
 
 func isHacker*(c: ActorCategory): bool {.inline.} =
-  ## Returns true if the category represents a malicious bad actor.
+  ## Returns true if the category represents a malicious bad actor (cracker).
+  c == CategoryBadActorHacker
+
+func isCracker*(c: ActorCategory): bool {.inline.} =
+  ## Returns true if the category represents a malicious cracker with criminal intent.
   c == CategoryBadActorHacker
 
 func isRealUser*(c: ActorCategory): bool {.inline.} =
@@ -356,6 +374,7 @@ func `$`*(flag: ThreatFlag): string =
   of ThreatMalformedRequest: "MalformedRequest"
   of ThreatHighRate404: "AggressiveRate"
   of ThreatNoAssetFetch: "NoAssetsRequested"
+  of ThreatBotImpersonation: "BotImpersonation"
 
 func parseThreatFlag*(s: string): ThreatFlag =
   ## Parses a string representation into a ThreatFlag enum.
@@ -369,6 +388,7 @@ func parseThreatFlag*(s: string): ThreatFlag =
   of "THREATMALFORMEDREQUEST", "MALFORMEDREQUEST": ThreatMalformedRequest
   of "THREATHIGHRATE404", "AGGRESSIVERATE", "HIGHRATE404": ThreatHighRate404
   of "THREATNOASSETFETCH", "NOASSETSREQUESTED", "NOASSETFETCH": ThreatNoAssetFetch
+  of "THREATBOTIMPERSONATION", "BOTIMPERSONATION", "FAKEBOT", "IMPERSONATION": ThreatBotImpersonation
   else:
     raise newException(ParseError, "Unknown ThreatFlag token: " & s)
 
@@ -405,6 +425,10 @@ proc `matchedRules=`*(p: var ThreatProfile, rules: seq[string]) {.inline.} =
   p.matchedSignatures = rules
 
 func isHacker*(p: ThreatProfile): bool {.inline.} =
+  ## Returns true if p.category == CategoryBadActorHacker or p.score >= 50.
+  p.category == CategoryBadActorHacker or p.score >= 50
+
+func isCracker*(p: ThreatProfile): bool {.inline.} =
   ## Returns true if p.category == CategoryBadActorHacker or p.score >= 50.
   p.category == CategoryBadActorHacker or p.score >= 50
 

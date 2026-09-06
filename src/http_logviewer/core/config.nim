@@ -44,6 +44,7 @@ type
     colorMode*: ColorMode                   ## Color mode policy
     outputFormat*: OutputFormat             ## Presentation format
     logFormat*: LogFormat                   ## Input log parsing format
+    showVhost*: bool                        ## Display virtual host / website column
     filterCategory*: Option[ActorCategory]  ## Optional category filter shortcut
     minThreatScore*: int                    ## 0-100 threshold filter
     statusCodeFilter*: seq[int]             ## Specific status codes to display (e.g. @[404, 500])
@@ -262,6 +263,7 @@ func defaultViewerConfig*(): ViewerConfig =
     colorMode: ColorModeAuto,
     outputFormat: FormatStreamTable,
     logFormat: LogFormatAuto,
+    showVhost: false,
     filterCategory: none(ActorCategory),
     minThreatScore: 0,
     statusCodeFilter: @[],
@@ -278,6 +280,7 @@ func initViewerConfig*(
     colorMode: ColorMode = ColorModeAuto,
     outputFormat: OutputFormat = FormatStreamTable,
     logFormat: LogFormat = LogFormatAuto,
+    showVhost: bool = false,
     filterCategory: Option[ActorCategory] = none(ActorCategory),
     minThreatScore: int = 0,
     statusCodeFilter: openArray[int] = [],
@@ -294,6 +297,7 @@ func initViewerConfig*(
     colorMode: colorMode,
     outputFormat: outputFormat,
     logFormat: logFormat,
+    showVhost: showVhost,
     filterCategory: filterCategory,
     minThreatScore: minThreatScore,
     statusCodeFilter: @statusCodeFilter,
@@ -347,6 +351,7 @@ func `==`*(a, b: ViewerConfig): bool =
   if a.colorMode != b.colorMode: return false
   if a.outputFormat != b.outputFormat: return false
   if a.logFormat != b.logFormat: return false
+  if a.showVhost != b.showVhost: return false
   if a.filterCategory != b.filterCategory: return false
   if a.minThreatScore != b.minThreatScore: return false
   if a.statusCodeFilter != b.statusCodeFilter: return false
@@ -361,6 +366,7 @@ func `$`*(cfg: ViewerConfig): string =
   result = "ViewerConfig(log: \"" & cfg.logFilePath & "\"" &
     ", format: " & $cfg.outputFormat &
     ", logFormat: " & $cfg.logFormat &
+    ", showVhost: " & $cfg.showVhost &
     ", color: " & $cfg.colorOutput &
     ", follow: " & $cfg.follow &
     ", grouping: " & $cfg.enableGrouping &
@@ -375,6 +381,7 @@ func pretty*(cfg: ViewerConfig): string =
   result.add("  Color Output:               " & $cfg.colorOutput & " (" & $cfg.colorMode & ")\n")
   result.add("  Output Format:              " & $cfg.outputFormat & "\n")
   result.add("  Input Log Format:           " & $cfg.logFormat & "\n")
+  result.add("  Show Website/Vhost:         " & $cfg.showVhost & "\n")
   result.add("  Min Threat Score:           " & $cfg.minThreatScore & "\n")
   result.add("  Category Filter:            " & (if cfg.filterCategory.isSome: $cfg.filterCategory.get() else: "none") & "\n")
   result.add("  Status Codes:               " & (if cfg.statusCodeFilter.len > 0: $cfg.statusCodeFilter else: "all") & "\n")
@@ -392,6 +399,7 @@ proc `%`*(cfg: ViewerConfig): JsonNode =
     "colorMode": $cfg.colorMode,
     "outputFormat": $cfg.outputFormat,
     "logFormat": $cfg.logFormat,
+    "showVhost": cfg.showVhost,
     "filterCategory": (if cfg.filterCategory.isSome: %($cfg.filterCategory.get()) else: newJNull()),
     "minThreatScore": cfg.minThreatScore,
     "statusCodeFilter": cfg.statusCodeFilter,
@@ -416,6 +424,8 @@ proc parseViewerConfigJson*(node: JsonNode): ViewerConfig =
     result.outputFormat = parseOutputFormat(node["outputFormat"].getStr())
   if node.hasKey("logFormat") and node["logFormat"].kind == JString:
     result.logFormat = parseLogFormat(node["logFormat"].getStr())
+  if node.hasKey("showVhost") and node["showVhost"].kind == JBool:
+    result.showVhost = node["showVhost"].getBool()
   if node.hasKey("filterCategory") and node["filterCategory"].kind == JString:
     result.filterCategory = some(parseActorCategory(node["filterCategory"].getStr()))
   if node.hasKey("minThreatScore") and node["minThreatScore"].kind in {JInt}:

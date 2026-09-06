@@ -10,6 +10,7 @@ import ../parser/formats
 import styles
 
 export styles
+export formats.cleanVhost
 
 func renderHello*(msg: PipelineMessage): string =
   ## Formats the final pipeline output string for terminal presentation.
@@ -21,9 +22,11 @@ type
     colorize*: bool             ## Whether to emit ANSI colors and styling
     useEmoji*: bool             ## Whether to render Unicode country flag emojis
     includeUserAgent*: bool     ## Whether to include User-Agent column
+    includeVhost*: bool         ## Whether to include Website / Virtual Host column
     maxWidth*: int              ## Max terminal width constraint (0 = unconstrained)
     maxPathLen*: int            ## Maximum path length before shortening (0 = auto)
     maxUaLen*: int              ## Maximum User-Agent length before truncation (0 = auto)
+    maxHostLen*: int            ## Maximum Host/Website length before truncation (0 = auto)
     highlightSuspicious*: bool  ## Whether to highlight exploit tokens in URI parameters
 
 func defaultStreamFormatOptions*(): StreamFormatOptions =
@@ -32,9 +35,11 @@ func defaultStreamFormatOptions*(): StreamFormatOptions =
     colorize: true,
     useEmoji: true,
     includeUserAgent: true,
+    includeVhost: false,
     maxWidth: 0,
     maxPathLen: 0,
     maxUaLen: 0,
+    maxHostLen: 0,
     highlightSuspicious: false
   )
 
@@ -141,22 +146,28 @@ proc renderStreamHeader*(
   colorize: bool = true,
   useEmoji: bool = true,
   includeUserAgent: bool = true,
-  maxWidth: int = 0
+  maxWidth: int = 0,
+  includeVhost: bool = false
 ): string =
   ## Renders a standardized columnar table header for the stream view:
-  ## `TIME      GEO    STATUS  INTENT       CLIENT IP        METHOD PATH                 USER-AGENT`
+  ## `TIME      GEO    STATUS  INTENT       CLIENT IP        (WEBSITE                 )  METHOD PATH                 USER-AGENT`
   let timeHdr = "TIME    "
   let geoHdr = "GEO    "
   let statusHdr = "STATUS"
   let intentHdr = "INTENT     "
   let ipHdr = "CLIENT IP      "
+  let vhostHdr = "WEBSITE                 "
 
-  let prefix = "$1  $2  $3  $4  $5" % [timeHdr, geoHdr, statusHdr, intentHdr, ipHdr]
+  let prefix = if includeVhost:
+                 "$1  $2  $3  $4  $5  $6" % [timeHdr, geoHdr, statusHdr, intentHdr, ipHdr, vhostHdr]
+               else:
+                 "$1  $2  $3  $4  $5" % [timeHdr, geoHdr, statusHdr, intentHdr, ipHdr]
 
   var line = ""
+  let minUaWidth = if includeVhost: 110 else: 85
   if maxWidth <= 0:
     line = prefix & "  METHOD PATH" & (if includeUserAgent: "                 USER-AGENT" else: "")
-  elif maxWidth < 85 or not includeUserAgent:
+  elif maxWidth < minUaWidth or not includeUserAgent:
     line = prefix & "  METHOD PATH"
   else:
     line = prefix & "  METHOD PATH                 USER-AGENT"
@@ -176,7 +187,7 @@ func renderStreamSeparator*(width: int = 80, sepChar: char = '-'): string =
 
 proc renderStreamHeader*(opts: StreamFormatOptions): string =
   ## Renders a standardized columnar table header using StreamFormatOptions.
-  renderStreamHeader(opts.colorize, opts.useEmoji, opts.includeUserAgent, opts.maxWidth)
+  renderStreamHeader(opts.colorize, opts.useEmoji, opts.includeUserAgent, opts.maxWidth, opts.includeVhost)
 
 func renderStreamSeparator*(opts: StreamFormatOptions, sepChar: char = '-'): string =
   ## Renders a horizontal separator rule sized to opts.maxWidth or fallback.
@@ -308,10 +319,21 @@ proc renderStreamLine*(
   let cleanIp = sanitizeControlChars(record.entry.clientIp)
   let ipStr = alignLeft(if cleanIp.len > 0: cleanIp else: "-", 15)
 
-  let prefix = "$1  $2  $3  $4  $5" % [
-    timeStr, geoStr, statusStr, intentBadge, ipStr
-  ]
-  let prefixWidth = terminalDisplayWidth(prefix) # 54
+  let showVhost = opts.includeVhost or record.entry.vhost.len > 0
+  let prefix = if showVhost:
+                 let cv = cleanVhost(record.entry.vhost)
+                 let rawHost = if cv.len > 0: cv else: "-"
+                 let hostClean = sanitizeControlChars(rawHost)
+                 let truncatedHost = if opts.maxHostLen > 0: truncateText(hostClean, opts.maxHostLen) else: hostClean
+                 let vhostCol = alignLeft(truncatedHost, 24)
+                 "$1  $2  $3  $4  $5  $6" % [
+                   timeStr, geoStr, statusStr, intentBadge, ipStr, vhostCol
+                 ]
+               else:
+                 "$1  $2  $3  $4  $5" % [
+                   timeStr, geoStr, statusStr, intentBadge, ipStr
+                 ]
+  let prefixWidth = terminalDisplayWidth(prefix)
   let isSuspicious = record.threat.category in {CategoryBadActorHacker, CategorySuspicious} or record.threat.score >= 50
 
   if opts.maxWidth <= 0:
@@ -375,7 +397,8 @@ proc renderStreamLine*(
   colorize: bool = true,
   useEmoji: bool = true,
   maxWidth: int = 0,
-  includeUserAgent: bool = true
+  includeUserAgent: bool = true,
+  includeVhost: bool = false
 ): string =
   ## Backwards-compatible convenience overload for renderStreamLine.
   var opts = defaultStreamFormatOptions()
@@ -383,6 +406,7 @@ proc renderStreamLine*(
   opts.useEmoji = useEmoji
   opts.maxWidth = maxWidth
   opts.includeUserAgent = includeUserAgent
+  opts.includeVhost = includeVhost
   renderStreamLine(record, opts)
 
 # ==============================================================================
@@ -469,7 +493,7 @@ proc getTopAttackPaths*(ticker: StatusTicker, limit: int = 5): seq[tuple[path: s
 
 proc renderTicker*(ticker: StatusTicker, colorize: bool = true, maxWidth: int = 0): string =
   ## Renders a compact single-line status ticker:
-  ## `[STATUS] Parsed: 1,450 | Real: 1,200 | Bots: 180 | Hackers: 70 (4.8%) | Top: /.env (32), /wp-login.php (18)`
+  ## `[STATUS] Parsed: 1,450 | Real: 1,200 | Bots: 180 | Crackers: 70 (4.8%) | Top: /.env (32), /wp-login.php (18)`
   let total = ticker.totalLines
   let real = ticker.realUsers
   let bots = ticker.totalBots
@@ -487,7 +511,7 @@ proc renderTicker*(ticker: StatusTicker, colorize: bool = true, maxWidth: int = 
 
   if not colorize:
     var line = "[STATUS] Parsed: " & $total & " | Real: " & $real & " | Bots: " & $bots &
-               " | Hackers: " & $hackers & " (" & pctStr & ")"
+               " | Crackers: " & $hackers & " (" & pctStr & ")"
     if topProbes.len > 0:
       line.add(" | Top: " & topProbes)
     if maxWidth > 0 and terminalDisplayWidth(line) > maxWidth:
@@ -500,7 +524,7 @@ proc renderTicker*(ticker: StatusTicker, colorize: bool = true, maxWidth: int = 
     let botsStr = FgWhite & "Bots: " & Reset & FgCyan & Bold & $bots & Reset
     let hackerColor = if hackers > 0: BgRedBold & " " & $hackers & " (" & pctStr & ") " & Reset
                       else: FgGreen & $hackers & " (" & pctStr & ")" & Reset
-    let hackerStr = FgWhite & "Hackers: " & Reset & hackerColor
+    let hackerStr = FgWhite & "Crackers: " & Reset & hackerColor
 
     var line = tag & " " & parsedStr & " | " & realStr & " | " & botsStr & " | " & hackerStr
     if topProbes.len > 0:
@@ -542,9 +566,9 @@ proc renderSummaryBanner*(ticker: StatusTicker, colorize: bool = true, width: in
   b.add("Verified / SEO Bots  : " & $bots & " (" & botsPct & ")\n")
   b.add("Suspicious Scanners  : " & $suspicious & " (" & suspPct & ")\n")
   if colorize and hackers > 0:
-    b.add("Rogue Hackers        : " & BgRedBold & " " & $hackers & " (" & hackPct & ") " & Reset & "\n")
+    b.add("Rogue Crackers       : " & BgRedBold & " " & $hackers & " (" & hackPct & ") " & Reset & "\n")
   else:
-    b.add("Rogue Hackers        : " & $hackers & " (" & hackPct & ")\n")
+    b.add("Rogue Crackers       : " & $hackers & " (" & hackPct & ")\n")
   b.add("Total 404 Responses  : " & $err404 & "\n")
 
   let topList = ticker.getTopAttackPaths(5)

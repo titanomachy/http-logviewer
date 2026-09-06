@@ -97,17 +97,17 @@ suite "Threat Detection Accuracy - Legitimate Traffic & Verified Bot Protection 
 
   test "Item 01: Verified search engine bots are never flagged as hackers":
     let searchBots = [
-      ("Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)", "Googlebot"),
-      ("Mozilla/5.0 (compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm)", "Bingbot"),
-      ("DuckDuckBot/1.0; (+http://duckduckgo.com/duckduckbot.html)", "DuckDuckBot"),
-      ("Mozilla/5.0 (compatible; YandexBot/3.0; +http://yandex.com/bots)", "YandexBot"),
-      ("Mozilla/5.0 (compatible; Baiduspider/2.0; +http://www.baidu.com/search/spider.html)", "Baiduspider"),
-      ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15 (Applebot/0.1; +http://www.apple.com/go/applebot)", "Applebot")
+      ("Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)", "Googlebot", "66.249.66.1"),
+      ("Mozilla/5.0 (compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm)", "Bingbot", "40.77.167.1"),
+      ("DuckDuckBot/1.0; (+http://duckduckgo.com/duckduckbot.html)", "DuckDuckBot", "54.208.102.37"),
+      ("Mozilla/5.0 (compatible; YandexBot/3.0; +http://yandex.com/bots)", "YandexBot", "178.154.160.1"),
+      ("Mozilla/5.0 (compatible; Baiduspider/2.0; +http://www.baidu.com/search/spider.html)", "Baiduspider", "180.76.15.1"),
+      ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15 (Applebot/0.1; +http://www.apple.com/go/applebot)", "Applebot", "17.58.101.1")
     ]
 
-    for (ua, expectedName) in searchBots:
+    for (ua, expectedName, botIp) in searchBots:
       let entry = initHttpLogEntry(
-        clientIp = "66.249.66.1",
+        clientIp = botIp,
         timestamp = now(),
         `method` = HttpGet,
         path = "/articles/deep-learning-systems",

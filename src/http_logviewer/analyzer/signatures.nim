@@ -32,12 +32,15 @@ const
   ]
 
   ## Content Management System (CMS) & Web Admin Exploit Signatures
-  CmsExploitSignatures*: array[15, string] = [
+  CmsExploitSignatures*: array[21, string] = [
     "/wp-login.php", "/xmlrpc.php", "/wp-admin/", "/wp-includes/",
     "/phpmyadmin", "/pma/", "/admin/pma/", "/mysql/",
     "/setup.php", "/install.php", "/boaform/admin/",
     "/solr/admin/", "/telescope/requests", "/debug/default/view",
-    "/administrator/"
+    "/administrator/",
+    "/fckeditor", "/ckeditor",
+    "/filemanager/browser", "/editor/filemanager",
+    "/connectors/upload", "/connector.php"
   ]
 
   ## Directory traversal sequences (raw, encoded, and double-encoded)
@@ -202,6 +205,10 @@ func detectCmsExploit*(rawUri: string): Option[string] =
       return some(exploit)
 
   # Common generic variations
+  if "fckeditor" in norm or "ckeditor" in norm:
+    return some("/fckeditor")
+  if "filemanager" in norm and ("browser" in norm or "upload" in norm or "connector" in norm):
+    return some("/filemanager")
   if "/wp-content/plugins/" in norm and ("eval" in norm or "upload" in norm):
     return some("/wp-content/plugins/")
   if "/phpmyadmin" in norm or "/pma" in norm:

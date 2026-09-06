@@ -47,7 +47,7 @@ suite "Public Library API - Module Interface & Clean Embedding (Phase 07 / Categ
     check "404" in codeBadge
 
     let intentBadge = formatIntentBadge(CategoryBadActorHacker, colorize = false)
-    check "HACKER" in intentBadge
+    check "CRACKER" in intentBadge
 
     let ticker = initStatusTicker()
     check ticker.totalLines == 0

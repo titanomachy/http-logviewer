@@ -336,6 +336,33 @@ suite "Behavioral Heuristics - Score to ActorCategory Mapping (Phase 04 / Catego
     check profile.score >= 50
     check profile.category == CategoryBadActorHacker
     check ThreatSensitiveFile in profile.flags
+    check ThreatBotImpersonation in profile.flags
+
+  test "Item 05: Script kiddie impersonating Googlebot targeting FCKeditor is classified as Hacker":
+    let fckGoogle = initHttpLogEntry(
+      clientIp = "185.220.101.5",
+      `method` = HttpGet,
+      path = "/fckeditor/editor/filemanager/browser/default/browser.html",
+      statusCode = 301,
+      userAgent = "Mozilla/5.0 (Linux; Android 6.0.1; Nexus 5X Build/MMB29P) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.6367.201 Mobile Safari/537.36 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"
+    )
+    let profile = evaluateThreat(fckGoogle)
+    check profile.score >= 80
+    check profile.category == CategoryBadActorHacker
+    check ThreatCmsExploit in profile.flags
+    check ThreatBotImpersonation in profile.flags
+
+  test "Item 05: Spoofed Googlebot from public non-crawler IP browsing normal paths flagged as suspicious":
+    let fakeCrawler = initHttpLogEntry(
+      clientIp = "185.220.101.5",
+      `method` = HttpGet,
+      path = "/blog/article-1",
+      statusCode = 200,
+      userAgent = "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"
+    )
+    let profile = evaluateThreat(fakeCrawler)
+    check profile.category == CategorySuspicious
+    check ThreatBotImpersonation in profile.flags
 
   test "Item 05: Generic scripting client (curl) maps to CategorySuspicious":
     let curlEntry = initHttpLogEntry(

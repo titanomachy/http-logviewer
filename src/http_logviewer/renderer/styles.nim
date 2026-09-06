@@ -50,7 +50,8 @@ const
   BadgeFriendly*   = "\e[36m[FRIENDLY ]\e[0m"
   BadgeScraper*    = "\e[33m[SCRAPER  ]\e[0m"
   BadgeSuspicious* = "\e[38;5;208m[SUSPICIOUS]\e[0m"
-  BadgeHacker*     = "\e[41;97;1m[ HACKER! ]\e[0m"
+  BadgeCracker*    = "\e[41;97;1m[ CRACKER!]\e[0m"
+  BadgeHacker*     = BadgeCracker
   BadgeUnknown*    = "\e[90m[ UNKNOWN ]\e[0m"
 
   # Intent Category Badges (Monochromatic plain text)
@@ -59,7 +60,8 @@ const
   BadgeFriendlyMono*   = "[FRIENDLY ]"
   BadgeScraperMono*    = "[SCRAPER  ]"
   BadgeSuspiciousMono* = "[SUSPICIOUS]"
-  BadgeHackerMono*     = "[ HACKER! ]"
+  BadgeCrackerMono*    = "[ CRACKER!]"
+  BadgeHackerMono*     = BadgeCrackerMono
   BadgeUnknownMono*    = "[ UNKNOWN ]"
 
 func formatStatusCode*(code: int, colorize: bool = true): string =
@@ -160,7 +162,7 @@ func formatIntentBadge*(category: ActorCategory, colorize: bool = true): string 
   ## - FriendlyCrawler: `[FRIENDLY ]` in cyan
   ## - CommercialBot: `[SCRAPER  ]` in yellow
   ## - SuspiciousScanner: `[SUSPICIOUS]` in orange
-  ## - BadActorHacker: `[ HACKER! ]` in bold white on red background
+  ## - BadActorHacker / Cracker: `[ CRACKER!]` in bold white on red background
   ## - Unknown: `[ UNKNOWN ]` in gray
   if not colorize:
     case category
@@ -169,7 +171,7 @@ func formatIntentBadge*(category: ActorCategory, colorize: bool = true): string 
     of CategoryFriendlyCrawler: BadgeFriendlyMono
     of CategoryCommercialBot: BadgeScraperMono
     of CategorySuspicious: BadgeSuspiciousMono
-    of CategoryBadActorHacker: BadgeHackerMono
+    of CategoryBadActorHacker: BadgeCrackerMono
     of CategoryUnknown: BadgeUnknownMono
   else:
     case category
@@ -178,7 +180,7 @@ func formatIntentBadge*(category: ActorCategory, colorize: bool = true): string 
     of CategoryFriendlyCrawler: BadgeFriendly
     of CategoryCommercialBot: BadgeScraper
     of CategorySuspicious: BadgeSuspicious
-    of CategoryBadActorHacker: BadgeHacker
+    of CategoryBadActorHacker: BadgeCracker
     of CategoryUnknown: BadgeUnknown
 
 func formatIntentBadge*(threat: ThreatProfile, colorize: bool = true): string {.inline.} =

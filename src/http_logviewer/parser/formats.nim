@@ -189,6 +189,19 @@ func cleanIpAddress*(rawIp: string): string =
 
   return s.strip()
 
+func cleanVhost*(rawVhost: string): string =
+  ## Strips common port suffixes (:80, :443), quotes, brackets, and trims whitespace
+  ## from a virtual host string for clean display and correlation.
+  if rawVhost.len == 0:
+    return ""
+  var s = rawVhost.strip(chars = {' ', '\t', '"', '\''})
+  let colon = s.rfind(':')
+  if colon > 0:
+    let port = s[colon + 1 .. ^1]
+    if port == "80" or port == "443":
+      s = s[0 ..< colon]
+  s
+
 func normalizeMonthToken*(token: string): string =
   ## Normalizes international and multi-locale month representations
   ## (German, French, Spanish, Dutch, Italian, numeric) to standard 3-letter English month abbreviations.
@@ -607,6 +620,52 @@ func parseUserAgentQuotedString*(line: string, idx: var int, outStr: var string)
       inc(idx)
   return false
 
+proc extractClientIpAndVhost*(
+  line: string,
+  idx: var int,
+  clientIpOut: var string,
+  vhostOut: var string
+): bool =
+  ## Parses the leading tokens of an HTTP log line, distinguishing between standard
+  ## format (client IP first) and virtual host prefixed format (vhost first, then client IP).
+  ## Advances idx to the end of the client IP token.
+  let lineLen = line.len
+  var token1: string
+  idx += parseUntil(line, token1, {' ', '\t'}, idx)
+  if token1.len == 0 or idx >= lineLen:
+    return false
+
+  var nextIdx = idx
+  nextIdx += skipWhitespace(line, nextIdx)
+  var token2: string
+  if nextIdx < lineLen and line[nextIdx] != '[':
+    discard parseUntil(line, token2, {' ', '\t'}, nextIdx)
+
+  let clean1 = cleanIpAddress(token1)
+  let clean2 = if token2.len > 0: cleanIpAddress(token2) else: ""
+
+  if isValidIpAddress(clean2) and not isValidIpAddress(clean1):
+    vhostOut = token1
+    clientIpOut = clean2
+    idx = nextIdx + token2.len
+    return true
+  elif isValidIpAddress(clean2) and isValidIpAddress(clean1):
+    var afterToken2 = nextIdx + token2.len
+    afterToken2 += skipWhitespace(line, afterToken2)
+    if afterToken2 < lineLen and (line[afterToken2] == '-' or line[afterToken2] == '['):
+      vhostOut = token1
+      clientIpOut = clean2
+      idx = nextIdx + token2.len
+      return true
+    else:
+      vhostOut = ""
+      clientIpOut = clean1
+      return true
+  else:
+    vhostOut = ""
+    clientIpOut = clean1
+    return true
+
 proc parseClfLine*(line: string, entry: var HttpLogEntry): bool =
   ## Parses a single line in W3C Common Log Format (CLF) into `entry`.
   ## Format: ``$remote_addr - $remote_user [$time_local] "$request" $status $body_bytes_sent``
@@ -621,12 +680,9 @@ proc parseClfLine*(line: string, entry: var HttpLogEntry): bool =
   if idx >= lineLen:
     return false
 
-  # 1. Parse Client IP (delimited by space)
-  var ip: string
-  idx += parseUntil(line, ip, {' ', '\t'}, idx)
-  if ip.len == 0 or idx >= lineLen:
+  # 1. Parse Client IP (and optional Virtual Host prefix)
+  if not extractClientIpAndVhost(line, idx, entry.clientIp, entry.vhost):
     return false
-  entry.clientIp = cleanIpAddress(ip)
 
   # 2. Skip Ident & Auth User (e.g. "- - " or "- frank ") up to opening '['
   idx += skipUntil(line, '[', idx)
@@ -713,12 +769,9 @@ proc parseCombinedLine*(line: string, entry: var HttpLogEntry): bool =
   if idx >= lineLen:
     return false
 
-  # 1. Parse Client IP (delimited by space)
-  var ip: string
-  idx += parseUntil(line, ip, {' ', '\t'}, idx)
-  if ip.len == 0 or idx >= lineLen:
+  # 1. Parse Client IP (and optional Virtual Host prefix)
+  if not extractClientIpAndVhost(line, idx, entry.clientIp, entry.vhost):
     return false
-  entry.clientIp = cleanIpAddress(ip)
 
   # 2. Skip Ident & Auth User up to opening '['
   idx += skipUntil(line, '[', idx)

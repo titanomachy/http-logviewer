@@ -34,6 +34,8 @@ suite "Threat & Actor Models - ActorCategory (Phase 01 / Category B / Item 01)":
     check SuspiciousScanner == CategorySuspicious
     check CategorySuspiciousScanner == CategorySuspicious
     check BadActorHacker == CategoryBadActorHacker
+    check BadActorCracker == CategoryBadActorHacker
+    check CategoryBadActorCracker == CategoryBadActorHacker
     check UnknownActor == CategoryUnknown
 
   test "Item 01: ActorCategory stringification and parsing":
@@ -56,6 +58,8 @@ suite "Threat & Actor Models - ActorCategory (Phase 01 / Category B / Item 01)":
     check parseActorCategory("SuspiciousScanner") == CategorySuspicious
     check parseActorCategory("bad_actor_hacker") == CategoryBadActorHacker
     check parseActorCategory("HACKER") == CategoryBadActorHacker
+    check parseActorCategory("CRACKER") == CategoryBadActorHacker
+    check parseActorCategory("bad_actor_cracker") == CategoryBadActorHacker
     check parseActorCategory("BadActor") == CategoryBadActorHacker
     check parseActorCategory("UNKNOWN") == CategoryUnknown
     check parseActorCategory("") == CategoryUnknown
@@ -74,9 +78,13 @@ suite "Threat & Actor Models - ActorCategory (Phase 01 / Category B / Item 01)":
     check not isBot(CategorySuspicious)
 
     check isHacker(CategoryBadActorHacker)
+    check isCracker(CategoryBadActorHacker)
     check not isHacker(CategoryRealUser)
+    check not isCracker(CategoryRealUser)
     check not isHacker(CategoryVerifiedBot)
+    check not isCracker(CategoryVerifiedBot)
     check not isHacker(CategorySuspicious)
+    check not isCracker(CategorySuspicious)
 
   test "Item 01: ActorCategory JSON serialization":
     let jNode = %CategoryBadActorHacker
@@ -94,6 +102,7 @@ suite "Threat & Actor Models - ThreatFlag (Phase 01 / Category B / Item 02)":
     check ord(ThreatMalformedRequest) == 6
     check ord(ThreatHighRate404) == 7
     check ord(ThreatNoAssetFetch) == 8
+    check ord(ThreatBotImpersonation) == 9
 
     # Verify constant aliases match PLAN and spec
     check SensitiveFileProbe == ThreatSensitiveFile
@@ -105,6 +114,7 @@ suite "Threat & Actor Models - ThreatFlag (Phase 01 / Category B / Item 02)":
     check MalformedRequest == ThreatMalformedRequest
     check AggressiveRate == ThreatHighRate404
     check NoAssetsRequested == ThreatNoAssetFetch
+    check BotImpersonation == ThreatBotImpersonation
 
   test "Item 02: ThreatFlag stringification and parsing":
     check $ThreatSensitiveFile == "SensitiveFileProbe"
@@ -116,6 +126,7 @@ suite "Threat & Actor Models - ThreatFlag (Phase 01 / Category B / Item 02)":
     check $ThreatMalformedRequest == "MalformedRequest"
     check $ThreatHighRate404 == "AggressiveRate"
     check $ThreatNoAssetFetch == "NoAssetsRequested"
+    check $ThreatBotImpersonation == "BotImpersonation"
 
     check parseThreatFlag("SensitiveFileProbe") == ThreatSensitiveFile
     check parseThreatFlag("PathExploit") == ThreatCmsExploit
@@ -126,6 +137,7 @@ suite "Threat & Actor Models - ThreatFlag (Phase 01 / Category B / Item 02)":
     check parseThreatFlag("MalformedRequest") == ThreatMalformedRequest
     check parseThreatFlag("AggressiveRate") == ThreatHighRate404
     check parseThreatFlag("NoAssetsRequested") == ThreatNoAssetFetch
+    check parseThreatFlag("BotImpersonation") == ThreatBotImpersonation
 
     expect ParseError:
       discard parseThreatFlag("InvalidThreatFlag")
@@ -485,17 +497,17 @@ suite "Threat & Actor Models - Ordinal Consistency & Set Safety (Phase 01 / Cate
     for i, c in actorCategories:
       check ord(c) == i
 
-    # ThreatFlag: 9 members, indices 0..8
+    # ThreatFlag: 10 members, indices 0..9
     var threatFlags: seq[ThreatFlag] = @[]
     for f in low(ThreatFlag)..high(ThreatFlag):
       threatFlags.add(f)
-    check threatFlags.len == 9
+    check threatFlags.len == 10
     for i, f in threatFlags:
       check ord(f) == i
 
   test "Item 06: Set operation safety, bitwise limits, and complement safety":
     let fullSet: set[ThreatFlag] = {low(ThreatFlag)..high(ThreatFlag)}
-    check card(fullSet) == 9
+    check card(fullSet) == 10
 
     let emptySet: set[ThreatFlag] = {}
     check card(emptySet) == 0
@@ -503,7 +515,7 @@ suite "Threat & Actor Models - Ordinal Consistency & Set Safety (Phase 01 / Cate
     # Complement
     let subset: set[ThreatFlag] = {ThreatSensitiveFile, ThreatCmsExploit}
     let complement = fullSet - subset
-    check card(complement) == 7
+    check card(complement) == 8
     check ThreatSensitiveFile notin complement
     check ThreatCmsExploit notin complement
     check ThreatSqlInjection in complement
