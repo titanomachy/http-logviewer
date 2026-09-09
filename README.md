@@ -244,8 +244,6 @@ The recording below illustrates visitor categorization, threat profiling, multi-
 
 ![Threat and Actor Domain Models](docs/images/threat_and_actor_models.gif)
 
-> *Source session recording:* [`docs/recordings/threat_and_actor_models.cast`](docs/recordings/threat_and_actor_models.cast) *(recorded with Asciinema, rendered via Agg with JetBrainsMono Nerd Font Mono)*.
-
 Compile and run this example:
 ```bash
 nim r --path:src examples/threat_and_actor_models.nim
@@ -291,8 +289,6 @@ assert runtimeCfg.enableGrouping == true
 The recording below illustrates runtime configuration inspection, filter criteria evaluation, CLI flag parsing, JSON round-trip serialization, and validation boundary enforcement in action:
 
 ![Configuration and State Models](docs/images/configuration_and_state_models.gif)
-
-> *Source session recording:* [`docs/recordings/configuration_and_state_models.cast`](docs/recordings/configuration_and_state_models.cast) *(recorded with Asciinema, rendered via Agg with JetBrainsMono Nerd Font Mono)*.
 
 Compile and run this example:
 ```bash
@@ -346,8 +342,6 @@ The recording below illustrates format auto-detection, Common Log Format (CLF) p
 
 ![Log Format Detection and Parsing](docs/images/format_detection_and_parsing.gif)
 
-> *Source session recording:* [`docs/recordings/format_detection_and_parsing.cast`](docs/recordings/format_detection_and_parsing.cast) *(recorded with Asciinema, rendered via Agg with JetBrainsMono Nerd Font Mono)*.
-
 Compile and run this example:
 ```bash
 nim r --path:src examples/format_detection_and_parsing.nim
@@ -398,8 +392,6 @@ The recording below illustrates `StreamReader` file ingestion, transparent `.log
 
 ![Streaming Ingestion and Pipe Support](docs/images/streaming_and_pipe_ingestion.gif)
 
-> *Source session recording:* [`docs/recordings/streaming_and_pipe_ingestion.cast`](docs/recordings/streaming_and_pipe_ingestion.cast) *(recorded with Asciinema, rendered via Agg with JetBrainsMono Nerd Font Mono)*.
-
 Compile and run this example:
 ```bash
 nim r --path:src examples/streaming_and_pipe_ingestion.nim
@@ -449,8 +441,6 @@ assert diag.totalLines == 2
 The recording below illustrates quote recovery, byte sanitization, IPv4/IPv6 address normalization, international date normalization, and streaming diagnostics tracking in action:
 
 ![Parsing Fault-Tolerance and Edge Cases](docs/images/parsing_fault_tolerance.gif)
-
-> *Source session recording:* [`docs/recordings/parsing_fault_tolerance.cast`](docs/recordings/parsing_fault_tolerance.cast) *(recorded with Asciinema, rendered via Agg with JetBrainsMono Nerd Font Mono)*.
 
 Compile and run this example:
 ```bash
@@ -507,8 +497,6 @@ The recording below illustrates IP-to-Country geolocation enrichment, RFC 1918 p
 
 ![IP-to-Country Lookup Engine](docs/images/ip_to_country_lookup.gif)
 
-> *Source session recording:* [`docs/recordings/ip_to_country_lookup.cast`](docs/recordings/ip_to_country_lookup.cast) *(recorded with Asciinema, rendered via Agg with JetBrainsMono Nerd Font Mono)*.
-
 Compile and run this example:
 ```bash
 nim r --path:src examples/ip_to_country_lookup.nim
@@ -558,8 +546,6 @@ assert formatCountryBadge("US", useEmoji = false) == "[US] US"
 The recording below demonstrates algorithmic flag conversion, country name dictionary resolution, GeoIP pseudo-codes, and terminal fallback formatting across environments:
 
 ![Unicode Country Flags & Metadata](docs/images/flags_and_country_metadata.gif)
-
-> *Source session recording:* [`docs/recordings/flags_and_country_metadata.cast`](docs/recordings/flags_and_country_metadata.cast) *(recorded with Asciinema, rendered via Agg with JetBrainsMono Nerd Font Mono)*.
 
 Compile and run this example:
 ```bash
@@ -619,8 +605,6 @@ assert formatLocalTrafficMarker("10.0.0.1", useEmoji = true, detailed = true) ==
 The recording below demonstrates RFC 1918 subnet boundary detection, loopback/link-local resolution, CGNAT/multicast classification, bogon range filtering, distinct local traffic markers, and GeoIpEngine integration:
 
 ![Bogon, Private and Loopback IP Subnets](docs/images/bogon_and_private_ip.gif)
-
-> *Source session recording:* [`docs/recordings/bogon_and_private_ip.cast`](docs/recordings/bogon_and_private_ip.cast) *(recorded with Asciinema, rendered via Agg with JetBrainsMono Nerd Font Mono)*.
 
 Compile and run this example:
 ```bash
@@ -684,8 +668,6 @@ The recording below demonstrates sensitive file probe detection, CMS exploit tra
 
 ![Attack Signatures and Hostile Payload Detection](docs/images/attack_signatures_and_payloads.gif)
 
-> *Source session recording:* [`docs/recordings/attack_signatures_and_payloads.cast`](docs/recordings/attack_signatures_and_payloads.cast) *(recorded with Asciinema, rendered via Agg with JetBrainsMono Nerd Font Mono)*.
-
 Compile and run this example:
 ```bash
 nim r --path:src examples/attack_signatures_and_payloads.nim
@@ -744,8 +726,6 @@ The recording below demonstrates classification of verified search engine bots, 
 
 ![User-Agent Taxonomy and Bot Identification](docs/images/user_agent_taxonomy.gif)
 
-> *Source session recording:* [`docs/recordings/user_agent_taxonomy.cast`](docs/recordings/user_agent_taxonomy.cast) *(recorded with Asciinema, rendered via Agg with JetBrainsMono Nerd Font Mono)*.
-
 Compile and run this example:
 ```bash
 nim r --path:src examples/user_agent_taxonomy.nim
@@ -802,8 +782,6 @@ assert stats.staticAssetRatio() > 0.60
 The recording below demonstrates static asset ratio calculation, 404 error velocity heuristics, HTTP method anomaly scoring, composite threat score aggregation, and intent categorization:
 
 ![Behavioral Heuristics and Anomaly Scoring](docs/images/behavioral_heuristics.gif)
-
-> *Source session recording:* [`docs/recordings/behavioral_heuristics.cast`](docs/recordings/behavioral_heuristics.cast) *(recorded with Asciinema, rendered via Agg with JetBrainsMono Nerd Font Mono)*.
 
 Compile and run this example:
 ```bash
@@ -866,8 +844,6 @@ The recording below demonstrates behavioral fingerprint generation, URL path seq
 
 ![Actor Fingerprint Synthesis & Multi-IP Correlation](docs/images/actor_fingerprint_synthesis.gif)
 
-> *Source session recording:* [`docs/recordings/actor_fingerprint_synthesis.cast`](docs/recordings/actor_fingerprint_synthesis.cast) *(recorded with Asciinema, rendered via Agg with JetBrainsMono Nerd Font Mono)*.
-
 Compile and run this example:
 ```bash
 nim r --path:src examples/actor_fingerprint_synthesis.nim
@@ -909,8 +885,6 @@ The recording below demonstrates in-memory sliding time window tracking, dynamic
 
 ![Multi-IP Probe Sequence Correlation](docs/images/multi_ip_probe_correlation.gif)
 
-> *Source session recording:* [`docs/recordings/multi_ip_probe_correlation.cast`](docs/recordings/multi_ip_probe_correlation.cast) *(recorded with Asciinema, rendered via Agg with JetBrainsMono Nerd Font Mono)*.
-
 Compile and run this example:
 ```bash
 nim r --path:src examples/multi_ip_probe_correlation.nim
@@ -949,8 +923,6 @@ let table = newActorClusterTable(windowSeconds = 1800, burstThresholdMs = 500)
 The recording below demonstrates subnet CIDR extraction, datacenter provider identification, synchronized burst detection across distinct IPs, human-readable cluster tagging, and composite risk assessment:
 
 ![Subnet, ASN & Temporal Clustering](docs/images/subnet_asn_temporal_clustering.gif)
-
-> *Source session recording:* [`docs/recordings/subnet_asn_temporal_clustering.cast`](docs/recordings/subnet_asn_temporal_clustering.cast) *(recorded with Asciinema, rendered via Agg with JetBrainsMono Nerd Font Mono)*.
 
 Compile and run this example:
 ```bash
@@ -1001,8 +973,6 @@ assert terminalDisplayWidth(col) == 7
 The recording below demonstrates high-contrast background-colored status code badges, color auto-detection policies, monochromatic fallbacks, intent badges, and columnar stream line rendering:
 
 ![Background-Colored HTTP Status Highlighting](docs/images/status_code_highlighting.gif)
-
-> *Source session recording:* [`docs/recordings/status_code_highlighting.cast`](docs/recordings/status_code_highlighting.cast) *(recorded with Asciinema, rendered via Agg with JetBrainsMono Nerd Font Mono)*.
 
 Compile and run this example:
 ```bash
@@ -1056,8 +1026,6 @@ echo renderJsonStreamLine(enrichedRecord)
 The recording below demonstrates formatted stream lines with status badges and flags, responsive 80-col and 120-col layouts, live status tickers, suspicious URI highlighting, query tampering diffs, and NDJSON serialization:
 
 ![Streaming Log Output & Formatted Tables](docs/images/streaming_terminal_ui.gif)
-
-> *Source session recording:* [`docs/recordings/streaming_terminal_ui.cast`](docs/recordings/streaming_terminal_ui.cast) *(recorded with Asciinema, rendered via Agg with JetBrainsMono Nerd Font Mono)*.
 
 Compile and run this example:
 ```bash
@@ -1115,8 +1083,6 @@ let mdReport = generateMarkdownReport(clusters, title = "Security Incident Repor
 The recording below demonstrates grouped actor summary tables, Spec 06 cluster profile cards, chronological attack timelines with time deltas, automated firewall script generation (Fail2ban, UFW), and Markdown incident reports:
 
 ![Grouped Actor View & Anomaly Drill-down](docs/images/grouped_actor_view.gif)
-
-> *Source session recording:* [`docs/recordings/grouped_actor_view.cast`](docs/recordings/grouped_actor_view.cast) *(recorded with Asciinema, rendered via Agg with JetBrainsMono Nerd Font Mono)*.
 
 Compile and run this example:
 ```bash
@@ -1176,8 +1142,6 @@ The recording below demonstrates CLI argument parsing, help manual display, simu
 
 ![CLI Options & Argument Parser](docs/images/cli_options_and_argument_parser.gif)
 
-> *Source session recording:* [`docs/recordings/cli_options_and_argument_parser.cast`](docs/recordings/cli_options_and_argument_parser.cast) *(recorded with Asciinema, rendered via Agg with JetBrainsMono Nerd Font Mono)*.
-
 Compile and run this example:
 ```bash
 nim r --path:src examples/cli_options_and_argument_parser.nim
@@ -1222,8 +1186,6 @@ if optEntry.isSome:
 The recording below demonstrates programmatic library consumption, log parsing, geolocation lookup, threat analysis, multi-IP actor correlation, and stream rendering:
 
 ![Public Library API & Programmatic Consumption](docs/images/library_usage.gif)
-
-> *Source session recording:* [`docs/recordings/library_usage.cast`](docs/recordings/library_usage.cast) *(recorded with Asciinema, rendered via Agg with JetBrainsMono Nerd Font Mono)*.
 
 Compile and run this example:
 ```bash
@@ -1270,8 +1232,6 @@ echo formatStatusCode(404, colorize = true) # \e[41;97;1m 404 \e[0m
 The recording below demonstrates end-to-end sample fixtures validation, genuine traffic vs. OWASP attack classification, background red 404 badge verification, and multi-IP botnet correlation:
 
 ![End-to-End Pipeline & Sample Log Fixtures](docs/images/end_to_end_pipeline.gif)
-
-> *Source session recording:* [`docs/recordings/end_to_end_pipeline.cast`](docs/recordings/end_to_end_pipeline.cast) *(recorded with Asciinema, rendered via Agg with JetBrainsMono Nerd Font Mono)*.
 
 Compile and run this example:
 ```bash
@@ -1326,8 +1286,6 @@ The recording below demonstrates pure functions, immutability, layered acyclic a
 
 ![Idiomatic Nim & Architectural Integrity](docs/images/idiomatic_nim_and_architecture.gif)
 
-> *Source session recording:* [`docs/recordings/idiomatic_nim_and_architecture.cast`](docs/recordings/idiomatic_nim_and_architecture.cast) *(recorded with Asciinema, rendered via Agg with JetBrainsMono Nerd Font Mono)*.
-
 Compile and run this example:
 ```bash
 nim r --path:src examples/idiomatic_nim_and_architecture.nim
@@ -1366,8 +1324,6 @@ let clusterTable = newActorClusterTable(windowSeconds = 300)
 The recording below demonstrates ARC/ORC deterministic reclamation, hot-loop allocation efficiency, reliable stream cleanup with `defer`, buffer safety under oversized inputs, and sliding-window bounded memory:
 
 ![Memory Safety & Allocation Profiling](docs/images/memory_safety_and_profiling.gif)
-
-> *Source session recording:* [`docs/recordings/memory_safety_and_profiling.cast`](docs/recordings/memory_safety_and_profiling.cast) *(recorded with Asciinema, rendered via Agg with JetBrainsMono Nerd Font Mono)*.
 
 Compile and run this example:
 ```bash
@@ -1417,8 +1373,6 @@ The recording below demonstrates legitimate traffic auditing, accidental 404 mit
 
 ![Threat Detection Accuracy & False Positive Auditing](docs/images/threat_accuracy_and_false_positives.gif)
 
-> *Source session recording:* [`docs/recordings/threat_accuracy_and_false_positives.cast`](docs/recordings/threat_accuracy_and_false_positives.cast) *(recorded with Asciinema, rendered via Agg with JetBrainsMono Nerd Font Mono)*.
-
 Compile and run this example:
 ```bash
 nim r --path:src examples/threat_accuracy_and_false_positives.nim
@@ -1460,8 +1414,6 @@ assert engine.hitRate() >= 0.50
 The recording below demonstrates 1,000,000 line throughput benchmarking, GeoIP cache hit profiling, streaming resident memory RSS measurement, compact release binary footprint verification, and release gate sign-off:
 
 ![Performance Benchmarking & Release Gate Review](docs/images/performance_benchmarks.gif)
-
-> *Source session recording:* [`docs/recordings/performance_benchmarks.cast`](docs/recordings/performance_benchmarks.cast) *(recorded with Asciinema, rendered via Agg with JetBrainsMono Nerd Font Mono)*.
 
 Compile and run this example:
 ```bash
