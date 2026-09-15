@@ -9,6 +9,6 @@
 [0.000, "o", "  [CLASSIFIED] /index.html                    -> Score: 0   [REAL_USER         ] Flags: {}\r\n"]
 [0.000, "o", "  [CLASSIFIED] /products                      -> Score: 0   [VERIFIED_BOT      ] Flags: {}\r\n"]
 [0.000, "o", "  [CLASSIFIED] /api/v1/metrics                -> Score: 20  [SUSPICIOUS        ] Flags: {NoAssetsRequested}\r\n"]
-[0.000, "o", "  [CLASSIFIED] /login?user=admin' UNION S...  -> Score: 100 [BAD_ACTOR_HACKER  ] Flags: {SqlInjection, KnownScannerUa, AggressiveRate}\r\n"]
-[0.000, "o", "  [CLASSIFIED] /.env                          -> Score: 100 [BAD_ACTOR_HACKER  ] Flags: {SensitiveFileProbe, MalformedRequest, AggressiveRate}\r\n\r\n=== Behavioral Heuristics & Anomaly Scoring Completed Successfully ===\r\n"]
+[0.000, "o", "  [CLASSIFIED] /login?user=admin' UNION S...  -> Score: 100 [BAD_ACTOR_CRACKER  ] Flags: {SqlInjection, KnownScannerUa, AggressiveRate}\r\n"]
+[0.000, "o", "  [CLASSIFIED] /.env                          -> Score: 100 [BAD_ACTOR_CRACKER  ] Flags: {SensitiveFileProbe, MalformedRequest, AggressiveRate}\r\n\r\n=== Behavioral Heuristics & Anomaly Scoring Completed Successfully ===\r\n"]
 [0.000, "x", "0"]

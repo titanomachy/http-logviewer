@@ -1,6 +1,10 @@
-# http_logviewer
+# httpLogViewer
 
 High-performance HTTP log viewer and rogue bot detector written in Nim. `http_logviewer` ingests standard HTTP access logs (Common Log Format, Combined Nginx/Apache, Caddy, JSON) and provides real-time enriched terminal output with threat intelligence, country flags, background-colored status badges, and distributed multi-IP actor correlation.
+
+## Why?
+
+I highly recommend [LNAV](https://github.com/tstack/lnav). LNAV is a serious logviewer with SQL queries and I use it a lot. It is perfect for digging into your logs. However, it does not contain any context about the visitors that access and query the server. Sometimes I just want to see how healthy visitor traffic is or test some firewall features and see if my CrowdSec rules work or not. httpLogViewer tries to give that context automatically.
 
 ## Key Features
 
@@ -26,6 +30,13 @@ High-performance HTTP log viewer and rogue bot detector written in Nim. `http_lo
 - **Nim**: Version 2.2.10 or newer (tested with ARC/ORC memory management).
 - **Dependencies**: None required for core runtime and CLI.
 - **Asciinema & Agg** (Optional development tooling): For recording terminal asciicasts and rendering documentation GIFs.
+
+---
+
+## Sample
+A short explanation and example of the http log viewer:
+
+![http status codes](./docs/images/status_code_highlighting.gif)
 
 ---
 
@@ -68,21 +79,17 @@ High-performance HTTP log viewer and rogue bot detector written in Nim. `http_lo
                       +-----------------------------+
 ```
 
-## Sample
-A short explanation and example of the http log viewer:
-
-![http status codes](./docs/images/status_code_highlighting.gif)
 ---
 
 ## Table of Contents
 
-- [http\_logviewer](#http_logviewer)
+- [httpLogViewer](#httplogviewer)
+  - [Why?](#why)
   - [Key Features](#key-features)
   - [Platform Support](#platform-support)
   - [Requirements](#requirements)
-  - [Architecture Overview](#architecture-overview)
   - [Sample](#sample)
-  - [](#)
+  - [Architecture Overview](#architecture-overview)
   - [Table of Contents](#table-of-contents)
   - [Installation](#installation)
   - [Quick Start](#quick-start)
