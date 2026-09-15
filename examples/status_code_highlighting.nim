@@ -3,7 +3,7 @@
 # - ANSI status code badge formatter for 2xx, 3xx, 401/403, 404, 5xx (Item 01)
 # - Terminal color auto-detection (NO_COLOR, dumb terminals, TTY detection) (Item 02)
 # - Monochromatic fallback mode when colors are suppressed (Item 03)
-# - Visitor intent category badges ([REAL USER], [GOOD BOT], [SCRAPER], [HACKER]) (Item 04)
+# - Visitor intent category badges ([REAL USER], [GOOD BOT], [SCRAPER], [CRACKER]) (Item 04)
 # - Country flag and ISO code aligned column formatting (Item 05)
 # - Monospace visual string width calculation accounting for emojis and ANSI escapes (Item 06)
 #
@@ -65,13 +65,16 @@ proc main() =
     CategoryFriendlyCrawler,
     CategoryCommercialBot,
     CategorySuspicious,
-    CategoryBadActorHacker,
+    CategoryBadActorCracker,
     CategoryUnknown
   ]
   for cat in categories:
     let colored = formatIntentBadge(cat, colorize = true)
     let mono = formatIntentBadge(cat, colorize = false)
-    echo "  Category ", alignLeft($cat, 22), " -> ", colored, "  Mono: ", mono
+    let categoryLabel =
+      if cat == CategoryBadActorCracker: "BAD_ACTOR_CRACKER"
+      else: $cat
+    echo "  Category ", alignLeft(categoryLabel, 22), " -> ", colored, "  Mono: ", mono
   echo ""
 
   # 5. Country Flag & Code Column Alignment (Item 05)
@@ -119,7 +122,7 @@ proc main() =
         userAgent = "python-requests/2.28.1"
       ),
       geo = initGeoLocation(countryCode = "DE", flagEmoji = "🇩🇪"),
-      threat = initThreatProfile(score = 90, category = CategoryBadActorHacker)
+      threat = initThreatProfile(score = 90, category = CategoryBadActorCracker)
     ),
     initEnrichedLogRecord(
       entry = initHttpLogEntry(
@@ -131,7 +134,7 @@ proc main() =
         userAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"
       ),
       geo = initGeoLocation(countryCode = "NL", flagEmoji = "🇳🇱"),
-      threat = initThreatProfile(score = 95, category = CategoryBadActorHacker)
+      threat = initThreatProfile(score = 95, category = CategoryBadActorCracker)
     ),
     initEnrichedLogRecord(
       entry = initHttpLogEntry(
@@ -155,7 +158,7 @@ proc main() =
         userAgent = "curl/7.81.0"
       ),
       geo = initGeoLocation(countryCode = "DE", flagEmoji = "🇩🇪"),
-      threat = initThreatProfile(score = 80, category = CategoryBadActorHacker)
+      threat = initThreatProfile(score = 80, category = CategoryBadActorCracker)
     ),
     initEnrichedLogRecord(
       entry = initHttpLogEntry(
