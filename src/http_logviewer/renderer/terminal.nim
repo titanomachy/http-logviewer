@@ -2,7 +2,8 @@
 ## Implements Phase 06 terminal presentation, streaming line output,
 ## column alignment, and status badge integration.
 
-import std/[strutils, times, terminal, unicode, tables, sets, algorithm, json, options]
+import std/[strutils, times, unicode, tables, sets, algorithm, json, options]
+import terminal_style, terminal_screen
 import ../core/types
 import ../enrichment/[geoip, flags]
 import ../analyzer/correlator
@@ -46,14 +47,14 @@ func defaultStreamFormatOptions*(): StreamFormatOptions =
 proc getEffectiveTerminalWidth*(overrideWidth: int = 0, fallback: int = 120): int =
   ## Returns effective terminal column width:
   ## - Uses `overrideWidth` if > 0
-  ## - Otherwise queries `terminal.terminalWidth()`
+  ## - Otherwise queries `terminal_screen.tryTerminalSize()`
   ## - Falls back to `fallback` (default 120) if stdout is redirected or query fails
   if overrideWidth > 0:
     return overrideWidth
   try:
-    let w = terminal.terminalWidth()
-    if w > 0:
-      return w
+    let sizeOpt = terminal_screen.tryTerminalSize()
+    if sizeOpt.isSome and sizeOpt.get().columns > 0:
+      return sizeOpt.get().columns
   except CatchableError:
     discard
   fallback
@@ -84,62 +85,14 @@ func truncateText*(text: string, maxLen: int, ellipsis: string = "..."): string 
   text[0 ..< (maxLen - ellLen)] & ellipsis
 
 func truncateAnsi*(s: string, maxVisibleWidth: int, ellipsis: string = "..."): string =
-  ## Safely truncates a string containing ANSI escape sequences to `maxVisibleWidth` visual columns.
-  ## Preserves internal escape codes without counting them and appends ANSI Reset (`\e[0m`) if truncated.
-  let currentWidth = terminalDisplayWidth(s)
-  if currentWidth <= maxVisibleWidth:
-    return s
+  ## Safely truncates a string containing ANSI escape sequences to `maxVisibleWidth` visual columns
+  ## using terminal_style. Preserves internal escape codes and appends ANSI Reset (`\e[0m`) if truncated.
   if maxVisibleWidth <= 0:
     return ""
-
-  let ellWidth = terminalDisplayWidth(ellipsis)
-  let targetWidth = if maxVisibleWidth > ellWidth: maxVisibleWidth - ellWidth else: maxVisibleWidth
-
-  result = newStringOfCap(s.len)
-  var visibleCount = 0
-  var regionalIndicatorCount = 0
-  var hadEscape = false
-  var i = 0
-
-  while i < s.len:
-    if s[i] == '\e' and i + 1 < s.len and s[i + 1] == '[':
-      hadEscape = true
-      let start = i
-      i += 2
-      while i < s.len and s[i] notin {'m', 'A'..'Z', 'a'..'z'}:
-        inc i
-      if i < s.len:
-        inc i
-      result.add(s[start ..< i])
-    else:
-      let r = runeAt(s, i)
-      let rLen = r.toUTF8().len
-      let cp = int(r)
-      var runeWidth = 1
-      if cp in [0xFE0E, 0xFE0F]:
-        runeWidth = 0
-      elif isRegionalIndicatorRune(r):
-        inc regionalIndicatorCount
-        if regionalIndicatorCount == 2:
-          runeWidth = 2
-          regionalIndicatorCount = 0
-        else:
-          runeWidth = 0
-      elif isEmojiRune(r):
-        runeWidth = 2
-      elif cp in 0x00..0x1F or cp == 0x7F:
-        runeWidth = 0
-
-      if visibleCount + runeWidth > targetWidth:
-        break
-
-      visibleCount += runeWidth
-      result.add(s[i ..< i + rLen])
-      i += rLen
-
-  if maxVisibleWidth > ellWidth:
-    result.add(ellipsis)
-  if hadEscape:
+  if terminal_style.displayWidth(s) <= maxVisibleWidth:
+    return s
+  result = terminal_style.truncateAnsi(s, maxVisibleWidth, suffix = ellipsis)
+  if (s.contains('\e') or result.contains('\e')) and not result.endsWith(Reset):
     result.add(Reset)
 
 proc renderStreamHeader*(

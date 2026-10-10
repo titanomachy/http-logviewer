@@ -2,34 +2,35 @@
 ## Implements Phase 06 / Category A requirements for high-contrast background-colored
 ## HTTP status codes, terminal color detection, and monochromatic fallback modes.
 
-import std/[strutils, os, terminal, options, unicode]
+import std/[strutils, os, options, unicode]
+import terminal_style, terminal_screen
 import ../core/[types, config]
 
 const
-  Reset* = "\e[0m"
-  Bold*  = "\e[1m"
-  Dim*   = "\e[2m"
-  Italic* = "\e[3m"
-  Underline* = "\e[4m"
-  Blink* = "\e[5m"
+  Reset* = termClear
+  Bold*  = termBold
+  Dim*   = termDim
+  Italic* = termItalic
+  Underline* = termUnderline
+  Blink* = termBlink
 
   # Foreground Text Colors
-  FgBlack*       = "\e[30m"
-  FgRed*         = "\e[31m"
-  FgGreen*       = "\e[32m"
-  FgYellow*      = "\e[33m"
-  FgBlue*        = "\e[34m"
-  FgMagenta*     = "\e[35m"
-  FgCyan*        = "\e[36m"
-  FgWhite*       = "\e[37m"
-  FgGray*        = "\e[90m"
-  FgBrightRed*   = "\e[91m"
-  FgBrightGreen* = "\e[92m"
-  FgBrightYellow* = "\e[93m"
-  FgBrightBlue*  = "\e[94m"
-  FgBrightMagenta* = "\e[95m"
-  FgBrightCyan*  = "\e[96m"
-  FgBrightWhite* = "\e[97m"
+  FgBlack*       = termBlack
+  FgRed*         = termRed
+  FgGreen*       = termGreen
+  FgYellow*      = termYellow
+  FgBlue*        = termBlue
+  FgMagenta*     = termMagenta
+  FgCyan*        = termCyan
+  FgWhite*       = termWhite
+  FgGray*        = termBrightBlack
+  FgBrightRed*   = termBrightRed
+  FgBrightGreen* = termBrightGreen
+  FgBrightYellow* = termBrightYellow
+  FgBrightBlue*  = termBrightBlue
+  FgBrightMagenta* = termBrightMagenta
+  FgBrightCyan*  = termBrightCyan
+  FgBrightWhite* = termBrightWhite
   FgBrightRedBold* = "\e[91;1m"
   FgOrange*      = "\e[38;5;208m"
 
@@ -101,26 +102,15 @@ func formatStatusCode*(code: int, colorize: bool = true): string =
     BgGray & text & Reset
 
 func stripAnsi*(s: string): string =
-  ## Strips all ANSI escape sequences (`\e[...m`) from a string.
-  result = newStringOfCap(s.len)
-  var i = 0
-  while i < s.len:
-    if s[i] == '\e' and i + 1 < s.len and s[i + 1] == '[':
-      i += 2
-      while i < s.len and s[i] notin {'m', 'A'..'Z', 'a'..'z'}:
-        inc i
-      if i < s.len:
-        inc i # Skip terminating char (e.g. 'm')
-    else:
-      result.add(s[i])
-      inc i
+  ## Strips all ANSI escape sequences (`\e[...m`) from a string using terminal_style.
+  terminal_style.stripAnsi(s)
 
 proc detectColorSupport*(isAttyOverride: Option[bool] = none(bool)): bool =
   ## Automatically detects whether the current environment supports ANSI color output.
   ## Evaluates:
   ## 1. Standard NO_COLOR specification (https://no-color.org)
   ## 2. Dumb or raw terminal types ($TERM)
-  ## 3. TTY status of standard output (stdout.isatty)
+  ## 3. TTY status of standard output (terminal_screen.isTerminal)
   ## 4. Windows Terminal / ANSICON environment detection
   if getEnv("NO_COLOR").len > 0:
     return false
@@ -129,7 +119,7 @@ proc detectColorSupport*(isAttyOverride: Option[bool] = none(bool)): bool =
   if term == "dumb" or term == "raw":
     return false
 
-  let isAtty = if isAttyOverride.isSome: isAttyOverride.get() else: terminal.isatty(stdout)
+  let isAtty = if isAttyOverride.isSome: isAttyOverride.get() else: terminal_screen.isTerminal(stdout)
   if not isAtty:
     return false
 
@@ -197,54 +187,15 @@ func isEmojiRune*(r: Rune): bool {.inline.} =
   (cp in 0x1F300..0x1F9FF) or (cp in 0x2600..0x26FF) or (cp in 0x2700..0x27BF) or (cp in 0x1FA00..0x1FAFF)
 
 func terminalDisplayWidth*(s: string): int =
-  ## Calculates the visible visual column width of a string rendered in a monospace terminal.
-  ## Strips ANSI escape sequences and accounts for 2-column wide Unicode emoji symbols
-  ## and regional indicator flag pairs (e.g. 🇺🇸 = 2 columns).
-  let clean = stripAnsi(s)
-  var width = 0
-  var regionalIndicatorCount = 0
-
-  for r in runes(clean):
-    let cp = int(r)
-    if cp in [0xFE0E, 0xFE0F]:
-      # Variation selectors (invisible display width)
-      discard
-    elif isRegionalIndicatorRune(r):
-      inc regionalIndicatorCount
-      if regionalIndicatorCount == 2:
-        # A pair of regional indicator runes forms one 2-column flag emoji
-        width += 2
-        regionalIndicatorCount = 0
-    elif isEmojiRune(r):
-      # Standalone emoji symbols (e.g. 🏠, 🌐, 🧅) occupy 2 monospace terminal columns
-      width += 2
-    elif cp in 0x00..0x1F or cp == 0x7F:
-      # Control characters
-      discard
-    else:
-      # ASCII and standard Latin / Unicode characters occupy 1 column
-      if regionalIndicatorCount == 1:
-        # Dangling single regional indicator
-        width += 1
-        regionalIndicatorCount = 0
-      width += 1
-
-  if regionalIndicatorCount == 1:
-    width += 1
-
-  result = width
+  ## Calculates the visible visual column width of a string rendered in a monospace terminal
+  ## using terminal_style.
+  terminal_style.displayWidth(s)
 
 func alignColumn*(s: string, targetWidth: int, alignRight: bool = false): string =
   ## Aligns string `s` to occupy exactly `targetWidth` terminal columns,
-  ## accurately taking into account ANSI escape sequences and multi-byte / emoji widths.
-  let visual = terminalDisplayWidth(s)
-  if visual >= targetWidth:
-    return s
-  let pad = repeat(' ', targetWidth - visual)
-  if alignRight:
-    result = pad & s
-  else:
-    result = s & pad
+  ## accurately taking into account ANSI escape sequences and multi-byte / emoji widths
+  ## using terminal_style.padAnsi.
+  terminal_style.padAnsi(s, targetWidth, if alignRight: TextAlignment.alignRight else: TextAlignment.alignLeft)
 
 func formatCountryColumn*(countryCode: string, flagEmoji: string = "", useEmoji: bool = true, width: int = 7): string =
   ## Formats country flag and country code into aligned columns (e.g. "🇺🇸 US  ", `[US] US`).
