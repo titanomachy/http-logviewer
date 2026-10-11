@@ -96,6 +96,7 @@ type
     recentTimestamps*: seq[DateTime]
     firstSeen*: DateTime
     lastSeen*: DateTime
+    badActorThreat*: Option[ThreatProfile] ## Strongest malicious verdict retained until the tracker is cleared
 
   ## In-memory session tracking table managing per-IP behavioral metrics
   VisitorBehaviorTracker* = ref object
@@ -370,7 +371,7 @@ func scoreToActorCategory*(score: int, uaCategory: ActorCategory = CategoryUnkno
 # Item 04: Composite Risk Score Calculator
 # ==============================================================================
 
-func evaluateThreat*(
+func evaluateCurrentThreat(
   entry: HttpLogEntry,
   stats: Option[VisitorStats]
 ): ThreatProfile =
@@ -480,6 +481,24 @@ func evaluateThreat*(
     matchedSignatures = matchedRules
   )
 
+func retainBadActorThreat(entry: HttpLogEntry, current: ThreatProfile, stats: Option[VisitorStats]): ThreatProfile =
+  result = current
+  if stats.isSome:
+    let s = stats.get()
+    if entry.clientIp.len > 0 and s.clientIp == entry.clientIp and s.badActorThreat.isSome:
+      let previous = s.badActorThreat.get()
+      result.category = CategoryBadActorHacker
+      result.score = max(result.score, previous.score)
+      result.flags = result.flags + previous.flags
+      for rule in previous.matchedSignatures:
+        if rule notin result.matchedSignatures:
+          result.matchedSignatures.add(rule)
+      result.matchedSignatures.add("History:PreviouslyIdentifiedBadActor")
+
+func evaluateThreat*(entry: HttpLogEntry, stats: Option[VisitorStats]): ThreatProfile =
+  ## Evaluates the current request and retains a prior malicious verdict for the same IP.
+  retainBadActorThreat(entry, evaluateCurrentThreat(entry, stats), stats)
+
 func evaluateThreat*(entry: HttpLogEntry): ThreatProfile =
   ## Evaluates threat posture for a standalone log entry without session history.
   evaluateThreat(entry, none(VisitorStats))
@@ -488,13 +507,19 @@ proc evaluateThreat*(entry: HttpLogEntry, tracker: VisitorBehaviorTracker): Thre
   ## Evaluates threat posture for an entry while updating and referencing session history in `tracker`.
   if tracker == nil:
     return evaluateThreat(entry)
-  let stats = tracker.recordEntry(entry)
-  evaluateThreat(entry, some(stats))
+  var stats = tracker.recordEntry(entry)
+  # Retain actual request evidence, rather than repeatedly accumulating inherited rules.
+  let current = evaluateCurrentThreat(entry, some(stats))
+  result = retainBadActorThreat(entry, current, some(stats))
+  if entry.clientIp.len > 0 and current.category == CategoryBadActorHacker:
+    if stats.badActorThreat.isNone or current.score > stats.badActorThreat.get().score:
+      stats.badActorThreat = some(current)
+      tracker.stats[entry.clientIp] = stats
 
 proc evaluateThreat*(entry: HttpLogEntry, history: openArray[HttpLogEntry]): ThreatProfile =
   ## Evaluates an entry within the context of a sequence of preceding entries from the same visitor.
   let tracker = newVisitorBehaviorTracker()
   for h in history:
-    discard tracker.recordEntry(h)
+    discard evaluateThreat(h, tracker)
   evaluateThreat(entry, tracker)
 

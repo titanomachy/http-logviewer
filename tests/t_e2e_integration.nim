@@ -8,7 +8,7 @@
 ## - Item 06: Validate multi-IP actor grouping output on distributed_botnet.log
 
 import unittest
-import std/[strutils, options, os, osproc, tables, sets, sequtils]
+import std/[strutils, options, os, osproc, tables, sets, sequtils, json]
 import http_logviewer
 import http_logviewer/core/types
 import http_logviewer/parser/[engine, formats]
@@ -17,6 +17,37 @@ import http_logviewer/renderer/[styles, terminal]
 
 let projectRoot = getCurrentDir()
 let binPath = projectRoot / "build" / "http_logviewer"
+
+suite "End-to-end persistent malicious IP verdicts":
+  test "Pipeline retains rogue IP intent in table and JSON output with grouping on or off":
+    for outputFormat in [FormatStreamTable, FormatJson]:
+      for grouping in [false, true]:
+        var output: seq[string] = @[]
+        let cfg = initViewerConfig(logFilePath = "tests/fixtures/persistent_actor.log",
+          colorOutput = false, outputFormat = outputFormat, enableGrouping = grouping)
+        let (stats, _) = runPipeline(cfg, outputWriter = proc(line: string) =
+          if outputFormat == FormatJson or "GET /" in line:
+            output.add(line)
+        )
+        check stats.parsedEntries == 9
+        check output.len == 9
+        for i, line in output:
+          let malicious = i in 3..7
+          if outputFormat == FormatJson:
+            let profile = parseJson(line)["threat"]
+            check profile["category"].getStr() == (if malicious: "BAD_ACTOR_HACKER" else: "REAL_USER")
+            if malicious:
+              check profile["score"].getInt() >= 50
+          else:
+            check (if malicious: "[ CRACKER!]" else: "[REAL USER]") in line
+
+  test "Category filters include benign follow-up requests from a known malicious IP":
+    var output: seq[string] = @[]
+    let cfg = initViewerConfig(logFilePath = "tests/fixtures/persistent_actor.log",
+      outputFormat = FormatJson, colorOutput = false, filterCategory = some(CategoryBadActorHacker))
+    discard runPipeline(cfg, outputWriter = proc(line: string) = output.add(line))
+    check output.len == 5
+    check parseJson(output[^1])["entry"]["path"].getStr() == "/"
 
 suite "End-to-End Fixtures & Threat Classification Precision (Phase 07 / Category C / Items 01, 02, 04)":
 

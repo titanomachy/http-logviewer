@@ -83,6 +83,7 @@ func analyzeRequest*(entry: HttpLogEntry): ThreatProfile {.inline.} =
 proc analyzeEntry*(entry: HttpLogEntry, tracker: VisitorBehaviorTracker): ThreatProfile =
   ## High-level library procedure evaluating visitor intent and threat score incorporating
   ## client behavioral tracking (404 velocity and static asset request ratio).
+  ## Once identified as malicious, an IP retains that verdict until the tracker is cleared.
   ##
   ## Thread-safety: Mutates only the caller-provided `tracker` instance; zero global state.
   classifier.evaluateThreat(entry, tracker)
@@ -127,8 +128,9 @@ proc correlateStream*(
   ##
   ## Thread-safety: Creates a thread-isolated correlator instance; zero global mutable state.
   let correlator = newActorCorrelator(windowSeconds)
+  let tracker = newVisitorBehaviorTracker()
   for entry in entries:
-    let threat = analyzeEntry(entry)
+    let threat = analyzeEntry(entry, tracker)
     discard correlator.correlateRecord(entry, threat)
   correlator.clusters
 
@@ -136,11 +138,13 @@ proc enrichAndAnalyze*(
   line: string,
   geoEngine: GeoIpEngine = nil,
   correlator: ActorCorrelator = nil,
-  format: LogFormat = LogFormatAuto
+  format: LogFormat = LogFormatAuto,
+  tracker: VisitorBehaviorTracker = nil
 ): Option[EnrichedLogRecord] =
   ## High-level all-in-one pipeline helper for third-party embedding.
   ## Parses raw log line, enriches geolocation and Unicode flag emoji, evaluates threat intent,
   ## and optionally correlates with active multi-IP clusters.
+  ## Pass a shared tracker to retain per-IP malicious verdicts across calls.
   ## Returns `some(EnrichedLogRecord)` or `none(EnrichedLogRecord)` if unparseable.
   ##
   ## Thread-safety: Uses passed engines or creates thread-isolated instances; zero global state.
@@ -150,7 +154,7 @@ proc enrichAndAnalyze*(
 
   let entry = optEntry.get()
   let geo = if geoEngine != nil: geoEngine.lookup(entry.clientIp) else: enrichGeo(entry.clientIp)
-  let threat = analyzeEntry(entry)
+  let threat = analyzeEntry(entry, tracker)
 
   var clusterId: Option[string] = none(string)
   if correlator != nil:
@@ -175,6 +179,7 @@ proc runPipeline*(
 
   let geoEngine = newGeoIpEngine(cfg.geoDbPath)
   let correlator = newActorCorrelator(cfg.correlationWindowSeconds)
+  let tracker = newVisitorBehaviorTracker()
   var ticker = initStatusTicker()
   let defaultWriter = proc(s: string) = echo s
   let writeOut = if outputWriter != nil: outputWriter else: defaultWriter
@@ -202,7 +207,7 @@ proc runPipeline*(
         streamOpts.includeVhost = true
 
       let geo = geoEngine.lookup(entry.clientIp)
-      let threat = evaluateThreat(entry)
+      let threat = evaluateThreat(entry, tracker)
 
       var clusterId: Option[string] = none(string)
       if cfg.enableGrouping:

@@ -215,6 +215,15 @@ suite "Public Library API - High-Level Procedures (Phase 07 / Category B / Item 
     check badRecord.isNone
 
 suite "Public Library API - Reentrancy & Zero Global State (Phase 07 / Category B / Item 03)":
+  test "Shared visitor tracker retains malicious verdicts in convenience pipeline":
+    let tracker = newVisitorBehaviorTracker()
+    let fixture = readFile("tests/fixtures/persistent_actor.log").splitLines()
+    let attack = fixture[3]
+    let benign = fixture[6]
+    check enrichAndAnalyze(attack, tracker = tracker).get().threat.category == CategoryBadActorHacker
+    check enrichAndAnalyze(benign, tracker = tracker).get().threat.category == CategoryBadActorHacker
+    check enrichAndAnalyze(benign).get().threat.category == CategoryRealUser
+
   test "Item 03: Multiple independent correlator instances do not cross-contaminate state":
     let correlatorA = newActorCorrelator(windowSeconds = 300)
     let correlatorB = newActorCorrelator(windowSeconds = 300)

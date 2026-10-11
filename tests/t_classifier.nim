@@ -5,6 +5,78 @@ import std/[unittest, strutils, times, options]
 import http_logviewer/core/types
 import http_logviewer/analyzer/classifier
 
+suite "Persistent malicious IP classification":
+  test "CMS probing verdict survives benign requests, time gaps, hosts, and UA changes":
+    let tracker = newVisitorBehaviorTracker()
+    let ip = "141.145.159.132"
+    let ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0.0.0 Safari/537.36"
+    let t0 = parse("2026-10-11T17:36:01Z", "yyyy-MM-dd'T'HH:mm:ss'Z'", utc())
+    let paths = ["/", "/", "/feed/", "/wp-login.php", "/wp-json/", "/xmlrpc.php", "/robots.txt"]
+    let statuses = [301, 200, 404, 404, 404, 404, 404]
+    var maliciousScore = 0
+    for i, path in paths:
+      let profile = evaluateThreat(initHttpLogEntry(
+        clientIp = ip, timestamp = t0 + initDuration(seconds = i),
+        path = path, statusCode = statuses[i], userAgent = ua
+      ), tracker)
+      if i < 3:
+        check profile.category == CategoryRealUser
+      else:
+        check profile.category == CategoryBadActorHacker
+        check profile.score >= 50
+        check profile.score >= maliciousScore
+        check ThreatCmsExploit in profile.flags
+        maliciousScore = profile.score
+      if i > 3:
+        check "History:PreviouslyIdentifiedBadActor" in profile.matchedSignatures
+
+    for path in ["/", "/app.css", "/robots.txt"]:
+      let benign = initHttpLogEntry(clientIp = ip, path = path, statusCode = 200,
+        timestamp = t0 + initDuration(days = 1), vhost = "another.example",
+        userAgent = "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)")
+      let profile = evaluateThreat(benign, tracker)
+      check profile.category == CategoryBadActorHacker
+      check profile.score >= maliciousScore
+      check ThreatCmsExploit in profile.flags
+
+    check evaluateThreat(initHttpLogEntry(clientIp = "192.0.2.77", path = "/", statusCode = 200,
+      userAgent = ua), tracker).category == CategoryRealUser
+
+    tracker.clear()
+    check evaluateThreat(initHttpLogEntry(clientIp = ip, path = "/", statusCode = 200,
+      userAgent = ua), tracker).category == CategoryRealUser
+
+  test "Suspicious requests and accidental 404s do not latch a malicious verdict":
+    let tracker = newVisitorBehaviorTracker()
+    let ip = "192.0.2.15"
+    check evaluateThreat(initHttpLogEntry(clientIp = ip, path = "/api/data", statusCode = 200,
+      userAgent = "curl/8.4.0"), tracker).category == CategorySuspicious
+    check evaluateThreat(initHttpLogEntry(clientIp = ip, path = "/missing-page", statusCode = 404,
+      userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0.0.0 Safari/537.36"), tracker).category == CategoryRealUser
+    check evaluateThreat(initHttpLogEntry(clientIp = ip, path = "/", statusCode = 200,
+      userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0.0.0 Safari/537.36"), tracker).category == CategoryRealUser
+
+  test "History replay retains attack evidence only for the matching IP":
+    let attack = initHttpLogEntry(clientIp = "192.0.2.10", path = "/.env", statusCode = 404,
+      userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0.0.0 Safari/537.36")
+    let benign = initHttpLogEntry(clientIp = attack.clientIp, path = "/", statusCode = 200,
+      userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0.0.0 Safari/537.36")
+    let profile = evaluateThreat(benign, @[attack])
+    check profile.category == CategoryBadActorHacker
+    check ThreatSensitiveFile in profile.flags
+    check "History:PreviouslyIdentifiedBadActor" in profile.matchedSignatures
+    check evaluateThreat(benign).category == CategoryRealUser
+    check evaluateThreat(benign, VisitorBehaviorTracker(nil)).category == CategoryRealUser
+    var otherIp = benign
+    otherIp.clientIp = "192.0.2.11"
+    check evaluateThreat(otherIp, @[attack]).category == CategoryRealUser
+
+  test "Requests without an IP cannot taint other requests without an IP":
+    let tracker = newVisitorBehaviorTracker()
+    discard evaluateThreat(initHttpLogEntry(path = "/.env", statusCode = 404), tracker)
+    check evaluateThreat(initHttpLogEntry(path = "/", statusCode = 200,
+      userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0.0.0 Safari/537.36"), tracker).category == CategoryRealUser
+
 suite "Behavioral Heuristics - Static Asset Ratio (Phase 04 / Category C / Item 01)":
   test "Item 01: isStaticAssetPath recognizes standard web assets regardless of query parameters":
     let staticPaths = [
