@@ -93,6 +93,7 @@ A short explanation and example of the http log viewer:
   - [Architecture Overview](#architecture-overview)
   - [Table of Contents](#table-of-contents)
   - [Installation](#installation)
+    - [Optional `hlv` shortcut](#optional-hlv-shortcut)
   - [Quick Start](#quick-start)
   - [API Overview](#api-overview)
     - [1. Core Log Entry Models](#1-core-log-entry-models)
@@ -145,14 +146,14 @@ A short explanation and example of the http log viewer:
 
 ## Installation
 
-Install release 0.1.1 with Nimble:
+Install release 0.1.2 with Nimble:
 
 ```bash
-nimble install -y 'https://github.com/titanomachy/http-logviewer@0.1.1' --useSystemNim
+nimble install -y 'https://github.com/titanomachy/http-logviewer@0.1.2' --useSystemNim
 http_logviewer --version
 ```
 
-The installed command should report `http_logviewer v0.1.1`. If it reports an older version, check `type -a http_logviewer`: an existing binary in `/usr/local/bin` may take precedence over the Nimble installation. Put `~/.nimble/bin` first in your `PATH`, or run `~/.nimble/bin/http_logviewer` directly.
+The installed command should report `http_logviewer v0.1.2`. If it reports an older version, check `type -a http_logviewer`: an existing binary in `/usr/local/bin` may take precedence over the Nimble installation. Put `~/.nimble/bin` first in your `PATH`, or run `~/.nimble/bin/http_logviewer` directly.
 
 Clone the repository and build using Nimble:
 
@@ -163,6 +164,38 @@ nimble build
 ```
 
 The resulting binary will be placed inside `build/http_logviewer`. All compiler intermediate files are isolated to `build/nimcache/`.
+
+### Optional `hlv` shortcut
+
+After installing or building, run from the repository:
+
+```bash
+nimble shortcut
+hlv access.log
+```
+
+This installs a shortcut in `~/.nimble/bin` (or `$NIMBLE_DIR/bin`) pointing to the installed `http_logviewer`, falling back to `build/http_logviewer`. Keep that directory on `PATH`. The original command remains available, and normal `nimble install` does not reserve `hlv`.
+
+The installer checks aliases, functions, executables on `PATH`, and existing destination files. If a name is taken, it reports the conflict and asks for another name; pressing Enter or reaching end-of-input skips installation. Existing files and shell configuration are never overwritten. Running it again with the same target is safe.
+
+`nimble shortcut` starts an interactive Bash/Zsh or PowerShell session to check configured aliases and functions. To also check aliases or functions defined only in your **current session**, run the installer directly in that shell:
+
+```bash
+# Bash or Zsh: source the script so it sees the current shell's commands.
+. ./scripts/install_hlv.sh
+
+# Optional: choose an executable and destination directory explicitly.
+. ./scripts/install_hlv.sh ./build/http_logviewer "$HOME/.local/bin"
+```
+
+```powershell
+# Windows PowerShell: creates an hlv.cmd launcher.
+& ./scripts/install_hlv.ps1
+# Optional custom paths:
+& ./scripts/install_hlv.ps1 -Executable ./build/http_logviewer.exe -BinDirectory "$HOME/bin"
+```
+
+For other shells, run the check in Bash/Zsh and check that shell's own aliases before installation. A shortcut to the local build requires keeping the repository and binary in place.
 
 ---
 

@@ -44,7 +44,7 @@ type
     stateDbPath*: Option[string]
 
 const
-  AppVersion* = "0.1.1"
+  AppVersion* = "0.1.2"
   AppName* = "http_logviewer"
 
 func cliHello*(greeting: string): string =

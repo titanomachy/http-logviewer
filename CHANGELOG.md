@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-10-12
+
+### Added
+
+- Optional `hlv` shortcut installation with `nimble shortcut`: a symlink on Linux/macOS and a `.cmd` launcher on Windows.
+- Collision checks for aliases, functions, executables on `PATH`, and existing destination files. Conflicts prompt for another name or a skip without overwriting existing commands or shell configuration.
+- Direct shell installers to check aliases and functions defined in the current session, plus support for custom executable paths and destination directories.
+- Bash and Zsh regression tests covering collisions, repeat installation, argument and stdin forwarding, and exit status preservation.
+
 ## [0.1.1] - 2026-10-11
 
 ### Added
