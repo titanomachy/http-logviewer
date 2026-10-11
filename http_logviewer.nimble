@@ -1,6 +1,6 @@
 # Package
 
-version       = "0.1.0"
+version       = "0.1.1"
 author        = "titanomachy"
 description   = "High-performance HTTP log viewer and rogue bot detector"
 license       = "MIT"

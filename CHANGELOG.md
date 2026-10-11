@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-11
+
+### Added
+
+- Temporary trusted IP options: `--whitelist-ip` and `--allowlist-ip`, repeatable for IPv4 and IPv6 addresses.
+- Persistent trusted IP storage using `nim_sqlite`, with `--whitelist-add`, `--whitelist-remove`, and `--whitelist-list` commands and `--allowlist-*` aliases.
+- Automatic loading of saved trusted IPs from the per-user SQLite database; `--state-db`, JSON, and TOML configuration support custom paths.
+- A distinct `[WHITELISTED]` badge with green text and brackets on a white background, plus a `whitelisted` boolean in JSON output. Trusted IPs retain risk score 0 and are excluded from malicious actor grouping.
+- TerminalDeck-based terminal output and styling.
+
+### Fixed
+
+- IPs identified as malicious retain their classification, strongest malicious score, and supporting evidence for the viewer session, including later requests to benign paths.
+- CLI version output now matches package version 0.1.1.
+
+## Development history
+
 ### Added
 
 #### Phase 00: Project Initialization & Build System Configuration

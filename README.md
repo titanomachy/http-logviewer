@@ -145,6 +145,15 @@ A short explanation and example of the http log viewer:
 
 ## Installation
 
+Install release 0.1.1 with Nimble:
+
+```bash
+nimble install -y 'https://github.com/titanomachy/http-logviewer@0.1.1' --useSystemNim
+http_logviewer --version
+```
+
+The installed command should report `http_logviewer v0.1.1`. If it reports an older version, check `type -a http_logviewer`: an existing binary in `/usr/local/bin` may take precedence over the Nimble installation. Put `~/.nimble/bin` first in your `PATH`, or run `~/.nimble/bin/http_logviewer` directly.
+
 Clone the repository and build using Nimble:
 
 ```bash

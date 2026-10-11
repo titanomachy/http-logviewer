@@ -167,6 +167,10 @@ suite "CLI Options & Argument Parser - Help & Version Documentation (Phase 07 / 
     check AppName in v
     check AppVersion in v
     check "v" & AppVersion in v
+    for line in readFile("http_logviewer.nimble").splitLines():
+      if line.strip().startsWith("version "):
+        let packageVersion = line.split('=')[1].strip().strip(chars = {'"'})
+        check AppVersion == packageVersion
 
   test "Item 02: CLI flags trigger helpRequested and versionRequested flags in CliOptions":
     check parseCliArgs(["--help"]).helpRequested == true
@@ -383,11 +387,11 @@ suite "CLI Options & Argument Parser - Automated CLI Binary Execution (Phase 07 
   test "Item 06: Executing binary with --version and -v":
     let (outVer, codeVer) = execCmdEx(binPath & " --version")
     check codeVer == 0
-    check "http_logviewer v0.1.0" in outVer
+    check "http_logviewer v" & AppVersion in outVer
 
     let (outV, codeV) = execCmdEx(binPath & " -v")
     check codeV == 0
-    check "http_logviewer v0.1.0" in outV
+    check "http_logviewer v" & AppVersion in outV
 
   test "Item 06: Executing binary with unknown options exits with code 1":
     let (outErr, codeErr) = execCmdEx(binPath & " --non-existent-flag")
