@@ -5,6 +5,26 @@ import std/[strutils, options, json]
 import http_logviewer/core/[types, errors, config]
 import http_logviewer/cli/args
 
+suite "IP whitelist configuration":
+  test "JSON and TOML load trusted IPv4 and IPv6 addresses":
+    let cfg = initViewerConfig(whitelistIps = ["192.0.2.10", "2001:db8::1"])
+    check loadViewerConfigJson($(%cfg)) == cfg
+    check cfg != defaultViewerConfig()
+    check loadViewerConfigToml("whitelist_ips = [\"192.0.2.10\", \"2001:0DB8:0:0:0:0:0:1\"]").whitelistIps == cfg.whitelistIps
+    check loadViewerConfigToml("allowlist_ips = [\"192.0.2.10\"]").whitelistIps == @["192.0.2.10"]
+    check loadViewerConfigToml("whitelist_ips = []").whitelistIps.len == 0
+
+  test "Malformed whitelist configuration is rejected":
+    for content in ["{\"whitelistIps\": \"192.0.2.10\"}", "{\"whitelistIps\": [123]}",
+        "{\"whitelistIps\": [\"invalid\"]}"]:
+      expect ConfigError:
+        discard loadViewerConfigJson(content)
+    for content in ["whitelist_ips = \"192.0.2.10\"", "whitelist_ips = [\"2001:::1\"]"]:
+      expect ConfigError:
+        discard loadViewerConfigToml(content)
+    expect ConfigError:
+      initViewerConfig(whitelistIps = ["invalid"]).validate()
+
 suite "Configuration & State Models - ViewerConfig (Phase 01 / Category C / Item 01)":
   test "Item 01: ViewerConfig definition, fields, and initialization":
     let cfg = initViewerConfig(

@@ -37,6 +37,11 @@ type
     correlationWindowSeconds*: Option[int]
     helpRequested*: bool
     versionRequested*: bool
+    whitelistIps*: seq[string]
+    whitelistAddIps*: seq[string]
+    whitelistRemoveIps*: seq[string]
+    whitelistList*: bool
+    stateDbPath*: Option[string]
 
 const
   AppVersion* = "0.1.0"
@@ -67,6 +72,12 @@ Options:
   -m, --min-score=<0-100>         Only display requests with risk score >= threshold
   -g, --group-actors              Correlate and group multi-IP requests by actor / botnet
   --vhost                         Display virtual host / website column in streaming output
+  --whitelist-ip=<ip-address>      Trust this IP for this run, marked WHITELISTED; repeat for multiple IPs
+  --allowlist-ip=<ip-address>      Alias for --whitelist-ip (IPv4 and IPv6 supported)
+  --whitelist-add=<ip-address>     Save a trusted IP permanently and exit; repeat for multiple IPs
+  --whitelist-remove=<ip-address>  Remove a saved trusted IP and exit; repeat for multiple IPs
+  --whitelist-list                List saved trusted IPs and exit
+  --state-db=<path>               SQLite state file (default: per-user data directory/http_logviewer/state.sqlite3)
   --status=<codes>                Filter by HTTP status codes (comma-separated, e.g. '404,500')
   --country=<codes>               Filter by ISO country codes (comma-separated, e.g. 'US,DE,NL')
   --geoip-db=<path>               Path to custom MaxMind GeoIP MMDB database file
@@ -85,6 +96,9 @@ Examples:
   http_logviewer -f /var/log/nginx/access.log --status=404,500
   tail -f /var/log/nginx/access.log | http_logviewer --filter=cracker
   http_logviewer --group-actors --min-score=50 access.log
+  http_logviewer --whitelist-ip 192.0.2.10 --whitelist-ip 2001:db8::1 access.log
+  http_logviewer --whitelist-add 192.0.2.10
+  http_logviewer --whitelist-list
   cat access.log | http_logviewer --json > enriched_events.ndjson
 
 Exit Codes:
@@ -112,7 +126,8 @@ proc initCliOptions*(): CliOptions =
     showVhost: false,
     correlationWindowSeconds: none(int),
     helpRequested: false,
-    versionRequested: false
+    versionRequested: false,
+    whitelistIps: @[]
   )
 
 proc parseCategoryString*(val: string): Option[ActorCategory] =
@@ -135,7 +150,7 @@ proc parseCliArgs*(args: openArray[string]): CliOptions =
   var p = initOptParser(
     @args,
     shortNoVal = {'f', 'g', 'h', 'v'},
-    longNoVal = @["follow", "group-actors", "group", "no-color", "nocolor", "json", "vhost", "show-vhost", "website", "help", "version"]
+    longNoVal = @["follow", "group-actors", "group", "no-color", "nocolor", "json", "vhost", "show-vhost", "website", "help", "version", "whitelist-list", "allowlist-list"]
   )
 
   proc fetchValue(p: var OptParser, optName: string): string =
@@ -165,6 +180,18 @@ proc parseCliArgs*(args: openArray[string]): CliOptions =
             raise newException(ConfigError, "Unexpected extra positional argument: '-'")
         continue
       case p.key.toLowerAscii()
+      of "whitelist-add", "allowlist-add":
+        result.whitelistAddIps.add(normalizeWhitelistIp(p.fetchValue("--" & p.key)))
+      of "whitelist-remove", "allowlist-remove":
+        result.whitelistRemoveIps.add(normalizeWhitelistIp(p.fetchValue("--" & p.key)))
+      of "whitelist-list", "allowlist-list":
+        result.whitelistList = true
+      of "state-db":
+        result.stateDbPath = some(p.fetchValue("--state-db"))
+      of "whitelist-ip", "allowlist-ip":
+        let ip = normalizeWhitelistIp(p.fetchValue("--" & p.key))
+        if ip notin result.whitelistIps:
+          result.whitelistIps.add(ip)
       of "f", "follow":
         result.follow = true
       of "filter":
@@ -236,6 +263,13 @@ proc parseCliArgs*(args: openArray[string]): CliOptions =
         result.versionRequested = true
       else:
         raise newException(ConfigError, "Unknown option: '--" & p.key & "'. Run with --help for usage instructions.")
+
+  let managementActions = int(result.whitelistAddIps.len > 0) +
+    int(result.whitelistRemoveIps.len > 0) + int(result.whitelistList)
+  ensureConfig(managementActions <= 1, "Use only one of --whitelist-add, --whitelist-remove, or --whitelist-list per command")
+  if managementActions > 0:
+    ensureConfig(result.logFilePath.isNone and not result.follow,
+      "Whitelist management commands exit without reading a log; omit LOGFILE and --follow")
 
 proc discoverConfigFile*(): Option[string] =
   ## Searches current directory and user home directory for configuration files (.toml or .json).
@@ -323,6 +357,10 @@ proc toViewerConfig*(opts: CliOptions): ViewerConfig =
   
   if opts.countryCodes.len > 0:
     result.filters.countryWhitelist = opts.countryCodes
+  if opts.whitelistIps.len > 0:
+    result.whitelistIps = opts.whitelistIps
+  if opts.stateDbPath.isSome:
+    result.stateDbPath = opts.stateDbPath
 
   result.syncFilters()
   result.validate()

@@ -12,7 +12,8 @@ I highly recommend [LNAV](https://github.com/tstack/lnav). LNAV is a serious log
 - **Visitor Intent Classification**: Instantly distinguishes legitimate human visitors (`REAL_USER`) from verified search engines (`VERIFIED_BOT`), friendly crawlers (`FRIENDLY_CRAWLER`), commercial scrapers (`COMMERCIAL_BOT`), suspicious scanners (`SUSPICIOUS`), and malicious vulnerability probes (`BAD_ACTOR_HACKER`).
 - **High-Visibility HTTP Status Badges**: Background-colored ANSI styling to make errors and anomalies instantly identifiable in scrolling logs (bold white on red for `404`, magenta/red for `500`/`502`, yellow for `3xx`, green for `2xx`).
 - **Multi-IP Distributed Actor Correlation**: Correlates requests originating from rotating IP addresses and proxies that belong to the exact same botnet campaign or attacker using temporal heuristics, User-Agent telemetry, and probe sequence fingerprinting.
-- **Zero External Runtime Dependencies**: Built entirely on Nim's high-performance standard library with low memory overhead and $O(1)$ streaming capability.
+- **Persistent Trusted IPs**: Save your own IPv4/IPv6 addresses once in SQLite and recognize their traffic with a distinct `[WHITELISTED]` badge on later runs.
+- **No Separate Database Service**: SQLite is embedded through `nim_sqlite`; the viewer requires no SQLite installation or database server.
 
 ---
 
@@ -28,7 +29,7 @@ I highly recommend [LNAV](https://github.com/tstack/lnav). LNAV is a serious log
 ## Requirements
 
 - **Nim**: Version 2.2.10 or newer (tested with ARC/ORC memory management).
-- **Dependencies**: None required for core runtime and CLI.
+- **Build Dependencies**: `nim_sqlite >= 0.4.0` and the terminal packages declared in `http_logviewer.nimble`, installed by Nimble. SQLite is compiled into the executable.
 - **Asciinema & Agg** (Optional development tooling): For recording terminal asciicasts and rendering documentation GIFs.
 
 ---
@@ -157,6 +158,29 @@ The resulting binary will be placed inside `build/http_logviewer`. All compiler 
 ---
 
 ## Quick Start
+
+Save your own IP addresses permanently, then run the viewer normally:
+
+```bash
+http_logviewer --whitelist-add 192.0.2.10 --whitelist-add 2001:db8::1
+http_logviewer access.log
+http_logviewer --whitelist-list
+http_logviewer --whitelist-remove 192.0.2.10
+```
+
+Saved addresses are loaded automatically on each CLI run. Traffic from trusted IPs appears as `[WHITELISTED]`, has risk score 0, and is excluded from malicious actor grouping. In JSON it retains category `REAL_USER` with `"whitelisted": true`, so the `real` category filter still includes it. Normal display filters still apply.
+
+The default database is `$XDG_DATA_HOME/http_logviewer/state.sqlite3` on Linux, falling back to `~/.local/share/http_logviewer/state.sqlite3`. Windows and macOS use their per-user application data directories. Use `--state-db /path/to/state.sqlite3` for a different file on both management and viewing commands. Ordinary viewing does not create a database if none exists.
+
+Add trusted IPs temporarily for one run:
+
+```bash
+http_logviewer --whitelist-ip 192.0.2.10 --whitelist-ip 2001:db8::1 access.log
+```
+
+`--allowlist-ip` is an alias for `--whitelist-ip`; the add, remove, and list commands also accept `--allowlist-*` aliases. Value options accept both `--option value` and `--option=value`. Add/remove commands and temporary IP flags can be repeated. Addresses match exactly, with equivalent IPv6 spellings recognized; CIDR ranges and hostnames are not supported.
+
+Configuration files can define additional IPs using `whitelist_ips = ["192.0.2.10", "2001:db8::1"]` in TOML (`allowlist_ips` also works), or `"whitelistIps": ["192.0.2.10", "2001:db8::1"]` in JSON. Explicit temporary CLI options replace the configured list; saved database entries are always added to the effective list. Configure the database path with `state_db_path` in TOML or `stateDbPath` in JSON. Library callers pass `stateDbPath = some(path)` to `initViewerConfig` to load saved entries in `runPipeline`.
 
 Execute the pre-built test suite to verify all modules:
 
@@ -1138,6 +1162,9 @@ Provides robust command-line argument parsing, multi-format configuration file l
   - `-g, --group-actors`: Enable multi-IP botnet correlation and group summary display
   - `--status=<codes>`: Filter by HTTP status codes (comma-separated, e.g. `404,500`)
   - `--country=<codes>`: Filter by ISO country codes (comma-separated, e.g. `US,DE,NL`)
+  - `--whitelist-ip <ip-address>` (alias `--allowlist-ip`): Temporarily trust an IPv4/IPv6 address, marked `[WHITELISTED]`; repeat for multiple IPs
+  - `--whitelist-add <ip-address>` / `--whitelist-remove <ip-address>` / `--whitelist-list`: Save, remove, or list persistent trusted IPs and exit without reading a log
+  - `--state-db <path>`: Override the SQLite state file location
   - `--geoip-db=<path>`: Custom path to GeoIP MMDB database file
   - `--format=<format>`: Output presentation (`stream`, `json`, `grouped`)
   - `--log-format=<format>`: Input format auto-detection or override (`auto`, `clf`, `combined`, `nginx`, `json`)

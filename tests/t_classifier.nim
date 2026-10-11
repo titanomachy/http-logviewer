@@ -1,9 +1,33 @@
 ## Unit tests for Threat Classification, Behavioral Heuristics, and Anomaly Scoring.
 ## Tests Phase 04 / Category C (Items 01 through 06).
 
-import std/[unittest, strutils, times, options]
+import std/[unittest, strutils, times, options, tables]
 import http_logviewer/core/types
 import http_logviewer/analyzer/classifier
+
+suite "Trusted IP whitelist classification":
+  test "Trusted IP overrides attack payloads, scanner UAs, and existing malicious history":
+    let tracker = newVisitorBehaviorTracker(whitelistIps = ["192.0.2.10", "2001:db8::1"])
+    let attack = initHttpLogEntry(clientIp = "192.0.2.10", path = "/.env", statusCode = 404,
+      userAgent = "sqlmap/1.7.2")
+    let history = VisitorStats(clientIp: attack.clientIp,
+      badActorThreat: some(evaluateThreat(attack)))
+    tracker.stats[attack.clientIp] = history
+    let trusted = evaluateThreat(attack, tracker)
+    check trusted.category == CategoryRealUser
+    check trusted.score == 0
+    check trusted.flags == {}
+    check trusted.whitelisted
+    check trusted.matchedSignatures == @["Whitelist:TrustedIp"]
+    var otherIp = attack
+    otherIp.clientIp = "192.0.2.11"
+    check evaluateThreat(otherIp, tracker).category == CategoryBadActorHacker
+    otherIp.clientIp = "2001:0DB8:0000:0:0:0:0:1"
+    check evaluateThreat(otherIp, tracker).category == CategoryRealUser
+    otherIp.clientIp = "2001:db8::2"
+    check evaluateThreat(otherIp, tracker).category == CategoryBadActorHacker
+    tracker.clear()
+    check evaluateThreat(attack, tracker).category == CategoryRealUser
 
 suite "Persistent malicious IP classification":
   test "CMS probing verdict survives benign requests, time gaps, hosts, and UA changes":

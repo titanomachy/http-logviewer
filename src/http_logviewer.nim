@@ -1,8 +1,8 @@
 ## Main entry point and library interface for http_logviewer.
 ## High-performance HTTP log analyzer CLI tool and library.
 
-import std/[options, tables]
-import http_logviewer/core/[prelude, types, config, errors]
+import std/[options, tables, os]
+import http_logviewer/core/[prelude, types, config, errors, whitelist_store]
 import http_logviewer/parser/[engine, formats]
 import http_logviewer/enrichment/[geoip, flags, bogon]
 import http_logviewer/analyzer/[classifier, signatures, useragents, correlator]
@@ -11,6 +11,7 @@ import http_logviewer/cli/args
 import http_logviewer/submodule
 
 export prelude, types, config, errors, engine, formats, geoip, flags, bogon, classifier, signatures, useragents, correlator, terminal, styles, args, submodule
+export whitelist_store
 
 # Thread-local control flag used strictly for POSIX signal handling during CLI streaming
 var keepRunning* {.threadvar.}: bool
@@ -179,7 +180,10 @@ proc runPipeline*(
 
   let geoEngine = newGeoIpEngine(cfg.geoDbPath)
   let correlator = newActorCorrelator(cfg.correlationWindowSeconds)
-  let tracker = newVisitorBehaviorTracker()
+  var whitelistIps = cfg.whitelistIps
+  if cfg.stateDbPath.isSome:
+    whitelistIps.add(loadWhitelistedIps(cfg.stateDbPath.get()))
+  let tracker = newVisitorBehaviorTracker(whitelistIps = whitelistIps)
   var ticker = initStatusTicker()
   let defaultWriter = proc(s: string) = echo s
   let writeOut = if outputWriter != nil: outputWriter else: defaultWriter
@@ -244,7 +248,31 @@ proc runHelloPipeline*(input: string = "pipeline_init"): string =
 
 proc main() =
   try:
-    let cfg = parseCommandLineArgs()
+    let opts = parseCliArgs(commandLineParams())
+    if opts.helpRequested:
+      echo helpText()
+      quit(0)
+    if opts.versionRequested:
+      echo versionText()
+      quit(0)
+    var cfg = toViewerConfig(opts)
+    if cfg.stateDbPath.isNone:
+      cfg.stateDbPath = some(defaultStateDbPath())
+    let statePath = cfg.stateDbPath.get()
+    if opts.whitelistAddIps.len > 0:
+      saveWhitelistedIps(statePath, opts.whitelistAddIps)
+      for ip in opts.whitelistAddIps:
+        echo "Saved whitelisted IP: ", ip
+      quit(0)
+    if opts.whitelistRemoveIps.len > 0:
+      removeWhitelistedIps(statePath, opts.whitelistRemoveIps)
+      for ip in opts.whitelistRemoveIps:
+        echo "Removed whitelist entry: ", ip
+      quit(0)
+    if opts.whitelistList:
+      for ip in loadWhitelistedIps(statePath):
+        echo ip
+      quit(0)
     let check = validateInputPath(cfg.logFilePath)
     if not check.valid:
       stderr.writeLine("http_logviewer: " & check.errorMsg)

@@ -7,8 +7,8 @@
 ## - Item 05: Map composite risk score to ActorCategory (0-20: RealUser, 21-49: SuspiciousScanner, 50-100: BadActorHacker)
 ## - Item 06: Scoring precision, benign asset handling, and false positive mitigation
 
-import std/[strutils, times, options, tables, math]
-import ../core/types
+import std/[strutils, times, options, tables, math, sets]
+import ../core/[types, config, errors]
 import signatures, useragents, bot_verification
 
 # ==============================================================================
@@ -103,14 +103,28 @@ type
     stats*: Table[string, VisitorStats]
     maxEntries*: int
     timeWindowSeconds*: int
+    whitelistIps*: HashSet[string] ## Canonical trusted IPs; preserved by clear()
 
-proc newVisitorBehaviorTracker*(maxEntries: int = 10000, timeWindowSeconds: int = 60): VisitorBehaviorTracker =
+proc newVisitorBehaviorTracker*(maxEntries: int = 10000, timeWindowSeconds: int = 60,
+    whitelistIps: openArray[string] = []): VisitorBehaviorTracker =
   ## Allocates and returns a new VisitorBehaviorTracker.
-  VisitorBehaviorTracker(
+  result = VisitorBehaviorTracker(
     stats: initTable[string, VisitorStats](),
     maxEntries: maxEntries,
-    timeWindowSeconds: timeWindowSeconds
+    timeWindowSeconds: timeWindowSeconds,
+    whitelistIps: initHashSet[string]()
   )
+  for ip in whitelistIps:
+    result.whitelistIps.incl(normalizeWhitelistIp(ip))
+
+proc isWhitelisted*(tracker: VisitorBehaviorTracker, ip: string): bool =
+  ## Matches exact addresses, including equivalent IPv6 spellings.
+  if tracker == nil or tracker.whitelistIps.len == 0:
+    return false
+  try:
+    normalizeWhitelistIp(ip) in tracker.whitelistIps
+  except ConfigError:
+    false
 
 func staticAssetRatio*(stats: VisitorStats): float =
   ## Computes the ratio of static asset requests to total requests (0.0 to 1.0).
@@ -507,6 +521,9 @@ proc evaluateThreat*(entry: HttpLogEntry, tracker: VisitorBehaviorTracker): Thre
   ## Evaluates threat posture for an entry while updating and referencing session history in `tracker`.
   if tracker == nil:
     return evaluateThreat(entry)
+  if tracker.isWhitelisted(entry.clientIp):
+    return initThreatProfile(score = 0, category = CategoryRealUser,
+      matchedSignatures = @["Whitelist:TrustedIp"], whitelisted = true)
   var stats = tracker.recordEntry(entry)
   # Retain actual request evidence, rather than repeatedly accumulating inherited rules.
   let current = evaluateCurrentThreat(entry, some(stats))

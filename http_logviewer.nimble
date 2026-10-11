@@ -11,6 +11,7 @@ bin           = @["http_logviewer"]
 
 # Dependencies
 requires "nim >= 2.2.10"
+requires "nim_sqlite >= 0.4.0"
 requires "terminal_style >= 0.1.1"
 requires "terminal_screen >= 0.1.1"
 requires "terminal_table >= 0.1.1"

@@ -47,6 +47,7 @@ const
 
   # Intent Category Badges (Colored)
   BadgeReal*       = "\e[32m[REAL USER]\e[0m"
+  BadgeWhitelisted* = "\e[92m[WHITELISTED]\e[0m"
   BadgeGoodBot*    = "\e[36m[GOOD BOT ]\e[0m"
   BadgeFriendly*   = "\e[36m[FRIENDLY ]\e[0m"
   BadgeScraper*    = "\e[33m[SCRAPER  ]\e[0m"
@@ -57,6 +58,7 @@ const
 
   # Intent Category Badges (Monochromatic plain text)
   BadgeRealMono*       = "[REAL USER]"
+  BadgeWhitelistedMono* = "[WHITELISTED]"
   BadgeGoodBotMono*    = "[GOOD BOT ]"
   BadgeFriendlyMono*   = "[FRIENDLY ]"
   BadgeScraperMono*    = "[SCRAPER  ]"
@@ -174,8 +176,11 @@ func formatIntentBadge*(category: ActorCategory, colorize: bool = true): string 
     of CategoryUnknown: BadgeUnknown
 
 func formatIntentBadge*(threat: ThreatProfile, colorize: bool = true): string {.inline.} =
-  ## Convenience overload extracting category from ThreatProfile.
-  formatIntentBadge(threat.category, colorize)
+  ## Shows explicit trust separately from inferred visitor intent.
+  if threat.whitelisted:
+    if colorize: BadgeWhitelisted else: BadgeWhitelistedMono
+  else:
+    formatIntentBadge(threat.category, colorize)
 
 func isRegionalIndicatorRune*(r: Rune): bool {.inline.} =
   ## Returns true if the rune is a Unicode Regional Indicator Symbol (0x1F1E6..0x1F1FF).

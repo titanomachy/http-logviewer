@@ -19,6 +19,35 @@ let projectRoot = getCurrentDir()
 let binPath = projectRoot / "build" / "http_logviewer"
 
 suite "End-to-end persistent malicious IP verdicts":
+  test "Whitelisted IP remains visible as REAL USER and is excluded from actor grouping":
+    for outputFormat in [FormatStreamTable, FormatJson]:
+      var output: seq[string] = @[]
+      let cfg = initViewerConfig(logFilePath = "tests/fixtures/persistent_actor.log",
+        colorOutput = false, outputFormat = outputFormat, enableGrouping = true,
+        whitelistIps = ["141.145.159.132"])
+      let (stats, ticker) = runPipeline(cfg, outputWriter = proc(line: string) = output.add(line))
+      check stats.parsedEntries == 9
+      check ticker.hackers == 0
+      check ticker.realUsers == 9
+      for line in output:
+        if outputFormat == FormatJson:
+          let record = parseJson(line)
+          check record["threat"]["category"].getStr() == "REAL_USER"
+          check record["threat"]["score"].getInt() == 0
+          check record["threat"]["whitelisted"].getBool() == (record["entry"]["clientIp"].getStr() == "141.145.159.132")
+          check record["clusterId"].kind == JNull
+        elif "GET /" in line:
+          check (if "141.145.159.132" in line: "[WHITELISTED]" else: "[REAL USER]") in line
+        check "CORRELATED MULTI-IP ACTOR CLUSTERS" notin line
+
+  test "Whitelisted requests still obey category and score filters":
+    var output: seq[string] = @[]
+    let cfg = initViewerConfig(logFilePath = "tests/fixtures/persistent_actor.log",
+      outputFormat = FormatJson, filterCategory = some(CategoryBadActorHacker),
+      whitelistIps = ["141.145.159.132"])
+    discard runPipeline(cfg, outputWriter = proc(line: string) = output.add(line))
+    check output.len == 0
+
   test "Pipeline retains rogue IP intent in table and JSON output with grouping on or off":
     for outputFormat in [FormatStreamTable, FormatJson]:
       for grouping in [false, true]:

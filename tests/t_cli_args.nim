@@ -3,6 +3,32 @@
 import unittest
 import std/[strutils, options, os, osproc]
 import http_logviewer
+
+suite "IP whitelist command-line options":
+  test "Space and equals syntax, repeated options, alias, and IPv6":
+    let opts = parseCliArgs(["--whitelist-ip", "192.0.2.10", "--whitelist-ip=2001:db8::1",
+      "--allowlist-ip", "2001:0DB8:0:0:0:0:0:1", "access.log"])
+    check opts.logFilePath == some("access.log")
+    check opts.whitelistIps == @["192.0.2.10", "2001:db8::1"]
+    check parseCommandLine(["--allowlist-ip=192.0.2.10"]).whitelistIps == @["192.0.2.10"]
+    check "--whitelist-ip" in helpText()
+    check "--allowlist-ip" in helpText()
+
+  test "Missing, malformed, network, and host values are rejected":
+    expect ConfigError:
+      discard parseCliArgs(["--whitelist-ip"])
+    expect ConfigError:
+      discard parseCliArgs(["--whitelist-ip", "--json"])
+    for ip in ["", "999.1.2.3", "localhost", "192.0.2.0/24", "192.0.2.10:80", "2001:::1", "1:2:3:4:5:6:7:8:9"]:
+      expect ConfigError:
+        discard parseCliArgs(["--whitelist-ip=" & ip])
+
+  test "CLI whitelist overrides configuration file whitelist":
+    let configPath = getTempDir() / "http-logviewer-whitelist-override.toml"
+    writeFile(configPath, "whitelist_ips = [\"192.0.2.11\"]\n")
+    defer: removeFile(configPath)
+    check parseCommandLine(["--config", configPath]).whitelistIps == @["192.0.2.11"]
+    check parseCommandLine(["--config", configPath, "--whitelist-ip", "192.0.2.10"]).whitelistIps == @["192.0.2.10"]
 import http_logviewer/core/[types, errors, config]
 import http_logviewer/cli/args
 

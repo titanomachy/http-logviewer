@@ -95,6 +95,7 @@ type
     category*: ActorCategory
     flags*: set[ThreatFlag]
     matchedSignatures*: seq[string] ## Specific rule names triggered
+    whitelisted*: bool             ## Explicitly trusted IP; rendered with a distinct badge
 
   ## Grouped profile for an entity operating across one or more IP addresses
   ActorCluster* = ref object
@@ -406,14 +407,16 @@ func initThreatProfile*(
   score: int = 0,
   category: ActorCategory = CategoryUnknown,
   flags: set[ThreatFlag] = {},
-  matchedSignatures: seq[string] = @[]
+  matchedSignatures: seq[string] = @[],
+  whitelisted: bool = false
 ): ThreatProfile =
   ## Initializes a new ThreatProfile.
   ThreatProfile(
     score: score,
     category: category,
     flags: flags,
-    matchedSignatures: matchedSignatures
+    matchedSignatures: matchedSignatures,
+    whitelisted: whitelisted
   )
 
 func matchedRules*(p: ThreatProfile): seq[string] {.inline.} =
@@ -454,7 +457,8 @@ func `==`*(a, b: ThreatProfile): bool =
   a.score == b.score and
     a.category == b.category and
     a.flags == b.flags and
-    a.matchedSignatures == b.matchedSignatures
+    a.matchedSignatures == b.matchedSignatures and
+    a.whitelisted == b.whitelisted
 
 func `$`*(p: ThreatProfile): string =
   ## Formatted string representation of ThreatProfile.
@@ -472,7 +476,8 @@ proc `%`*(p: ThreatProfile): JsonNode =
     "score": p.score,
     "category": $p.category,
     "flags": %p.flags,
-    "matchedSignatures": %p.matchedSignatures
+    "matchedSignatures": %p.matchedSignatures,
+    "whitelisted": p.whitelisted
   }
 
 proc parseThreatProfileJson*(n: JsonNode): ThreatProfile =
@@ -489,7 +494,9 @@ proc parseThreatProfileJson*(n: JsonNode): ThreatProfile =
   if n.hasKey("matchedSignatures") and n["matchedSignatures"].kind == JArray:
     for item in n["matchedSignatures"]:
       if item.kind == JString: rules.add(item.getStr())
-  initThreatProfile(score = score, category = cat, flags = flags, matchedSignatures = rules)
+  let whitelisted = n.hasKey("whitelisted") and n["whitelisted"].kind == JBool and n["whitelisted"].getBool()
+  initThreatProfile(score = score, category = cat, flags = flags, matchedSignatures = rules,
+    whitelisted = whitelisted)
 
 # ==============================================================================
 # GeoLocation Procedures & Serialization

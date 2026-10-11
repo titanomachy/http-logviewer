@@ -15,6 +15,7 @@ import t_bogon_private_ip
 import t_signatures
 import t_useragents
 import t_classifier
+import t_whitelist_store
 import t_correlator
 import t_renderer
 import t_cli_args

@@ -268,7 +268,7 @@ proc renderStreamLine*(
                   "--:--:--"
   let geoStr = formatCountryColumn(record.geo, useEmoji = opts.useEmoji, width = 7)
   let statusStr = formatStatusCode(record.entry.statusCode, opts.colorize)
-  let intentBadge = formatIntentBadge(record.threat.category, opts.colorize)
+  let intentBadge = formatIntentBadge(record.threat, opts.colorize)
   let cleanIp = sanitizeControlChars(record.entry.clientIp)
   let ipStr = alignLeft(if cleanIp.len > 0: cleanIp else: "-", 15)
 

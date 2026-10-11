@@ -2,7 +2,7 @@
 ## Provides ViewerConfig, FilterCriteria, format enums, validation routines,
 ## and serialization hooks.
 
-import std/[strutils, options, json, os]
+import std/[strutils, options, json, os, net]
 import errors, types
 
 type
@@ -52,6 +52,15 @@ type
     enableGrouping*: bool                   ## Correlate and group multi-IP actor requests
     correlationWindowSeconds*: int          ## Sliding window for actor correlation (default 1800)
     filters*: FilterCriteria                ## Detailed filter criteria object
+    whitelistIps*: seq[string]             ## Trusted IPv4/IPv6 addresses exempt from threat classification
+    stateDbPath*: Option[string]           ## Persistent whitelist DB; CLI supplies the per-user default
+
+proc normalizeWhitelistIp*(ip: string): string =
+  ## Validates a single IP address and returns its canonical representation.
+  try:
+    $parseIpAddress(ip.strip())
+  except ValueError:
+    raise newException(ConfigError, "Invalid whitelist IP address: '" & ip & "'. Expected a single IPv4 or IPv6 address.")
 
 # --- Stringifiers and Parsers for Enums ---
 
@@ -270,7 +279,8 @@ func defaultViewerConfig*(): ViewerConfig =
     geoDbPath: none(string),
     enableGrouping: false,
     correlationWindowSeconds: 1800,
-    filters: defaultFilterCriteria()
+    filters: defaultFilterCriteria(),
+    whitelistIps: @[]
   )
 
 func initViewerConfig*(
@@ -287,7 +297,9 @@ func initViewerConfig*(
     geoDbPath: Option[string] = none(string),
     enableGrouping: bool = false,
     correlationWindowSeconds: int = 1800,
-    filters: Option[FilterCriteria] = none(FilterCriteria)
+    filters: Option[FilterCriteria] = none(FilterCriteria),
+    whitelistIps: openArray[string] = [],
+    stateDbPath: Option[string] = none(string)
 ): ViewerConfig =
   ## Constructs a customized ViewerConfig instance, keeping embedded filters synchronized.
   result = ViewerConfig(
@@ -303,7 +315,9 @@ func initViewerConfig*(
     statusCodeFilter: @statusCodeFilter,
     geoDbPath: geoDbPath,
     enableGrouping: enableGrouping,
-    correlationWindowSeconds: correlationWindowSeconds
+    correlationWindowSeconds: correlationWindowSeconds,
+    whitelistIps: @whitelistIps,
+    stateDbPath: stateDbPath
   )
   if filters.isSome:
     result.filters = filters.get()
@@ -334,6 +348,11 @@ proc validate*(cfg: ViewerConfig) =
   for code in cfg.statusCodeFilter:
     ensureConfig(code in 100..599, "Invalid status code in statusCodeFilter: " & $code & " (must be 100..599)")
   cfg.filters.validate()
+  for ip in cfg.whitelistIps:
+    discard normalizeWhitelistIp(ip)
+  if cfg.stateDbPath.isSome:
+    ensureConfig(cfg.stateDbPath.get().len > 0 and '\0' notin cfg.stateDbPath.get() and
+      cfg.stateDbPath.get() != ":memory:", "stateDbPath must be a persistent database file path")
 
 proc isValid*(cfg: ViewerConfig): bool =
   ## Returns true if configuration passes all validation checks without raising.
@@ -359,6 +378,8 @@ func `==`*(a, b: ViewerConfig): bool =
   if a.enableGrouping != b.enableGrouping: return false
   if a.correlationWindowSeconds != b.correlationWindowSeconds: return false
   if a.filters != b.filters: return false
+  if a.whitelistIps != b.whitelistIps: return false
+  if a.stateDbPath != b.stateDbPath: return false
   return true
 
 func `$`*(cfg: ViewerConfig): string =
@@ -371,6 +392,7 @@ func `$`*(cfg: ViewerConfig): string =
     ", follow: " & $cfg.follow &
     ", grouping: " & $cfg.enableGrouping &
     ", minScore: " & $cfg.minThreatScore &
+    ", whitelistIps: " & $cfg.whitelistIps &
     ")"
 
 func pretty*(cfg: ViewerConfig): string =
@@ -389,6 +411,8 @@ func pretty*(cfg: ViewerConfig): string =
   result.add("  Multi-IP Grouping:          " & $cfg.enableGrouping & "\n")
   result.add("  Correlation Window Seconds: " & $cfg.correlationWindowSeconds & "\n")
   result.add("  Detailed Filters:           " & $cfg.filters)
+  result.add("\n  Whitelisted IPs:            " & $cfg.whitelistIps)
+  result.add("\n  State Database:             " & (if cfg.stateDbPath.isSome: cfg.stateDbPath.get() else: "none"))
 
 proc `%`*(cfg: ViewerConfig): JsonNode =
   ## Serializes ViewerConfig to structured JSON.
@@ -406,7 +430,9 @@ proc `%`*(cfg: ViewerConfig): JsonNode =
     "geoDbPath": (if cfg.geoDbPath.isSome: %cfg.geoDbPath.get() else: newJNull()),
     "enableGrouping": cfg.enableGrouping,
     "correlationWindowSeconds": cfg.correlationWindowSeconds,
-    "filters": %cfg.filters
+    "filters": %cfg.filters,
+    "whitelistIps": cfg.whitelistIps,
+    "stateDbPath": (if cfg.stateDbPath.isSome: %cfg.stateDbPath.get() else: newJNull())
   }
 
 proc parseViewerConfigJson*(node: JsonNode): ViewerConfig =
@@ -441,6 +467,13 @@ proc parseViewerConfigJson*(node: JsonNode): ViewerConfig =
     result.enableGrouping = node["enableGrouping"].getBool()
   if node.hasKey("correlationWindowSeconds") and node["correlationWindowSeconds"].kind == JInt:
     result.correlationWindowSeconds = node["correlationWindowSeconds"].getInt()
+  if node.hasKey("whitelistIps"):
+    ensureConfig(node["whitelistIps"].kind == JArray, "whitelistIps must be an array of IP address strings")
+    for item in node["whitelistIps"]:
+      ensureConfig(item.kind == JString, "whitelistIps must contain only IP address strings")
+      result.whitelistIps.add(normalizeWhitelistIp(item.getStr()))
+  if node.hasKey("stateDbPath") and node["stateDbPath"].kind == JString:
+    result.stateDbPath = some(node["stateDbPath"].getStr())
   result.syncFilters()
 
 proc loadViewerConfigJson*(jsonStr: string): ViewerConfig =
@@ -479,6 +512,15 @@ proc loadViewerConfigToml*(tomlStr: string): ViewerConfig =
         s
 
     case rawKey
+    of "statedbpath", "statedb":
+      result.stateDbPath = some(unquote(rawVal))
+    of "whitelistips", "allowlistips":
+      ensureConfig(rawVal.startsWith("[") and rawVal.endsWith("]"), "whitelist_ips must be an array of IP address strings")
+      result.whitelistIps = @[]
+      let inner = rawVal[1 .. ^2].strip()
+      if inner.len > 0:
+        for part in inner.split(','):
+          result.whitelistIps.add(normalizeWhitelistIp(unquote(part.strip())))
     of "logfilepath", "logfile", "path":
       result.logFilePath = unquote(rawVal)
     of "follow":
