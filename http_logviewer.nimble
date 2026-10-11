@@ -1,13 +1,13 @@
 # Package
 
-version       = "0.1.2"
+version       = "0.1.3"
 author        = "titanomachy"
 description   = "High-performance HTTP log viewer and rogue bot detector"
 license       = "MIT"
 srcDir        = "src"
 binDir        = "build"
-installExt    = @["nim"]
-bin           = @["http_logviewer"]
+installExt    = @["nim", "sh", "ps1"]
+bin           = @["http_logviewer", "hlv"]
 
 # Dependencies
 requires "nim >= 2.2.10"
@@ -19,32 +19,33 @@ requires "terminal_layout >= 0.1.1"
 requires "terminal_status >= 0.1.1"
 
 # Tasks
-task shortcut, "Install the optional hlv shortcut after checking for conflicts":
+before install:
+  let scriptDir = if dirExists("src"): "src/http_logviewer/cli" else: "http_logviewer/cli"
   when defined(windows):
-    exec "powershell -Command \"& './scripts/install_hlv.ps1'\""
+    exec "powershell -Command \"& './" & scriptDir & "/check_hlv.ps1'\""
   else:
-    # An interactive shell loads configured aliases and functions. Source the
-    # script directly to also check aliases defined only in the current session.
     let userShell = getEnv("SHELL", "/bin/sh")
     if userShell.endsWith("/bash") or userShell.endsWith("/zsh"):
-      exec "'" & userShell.replace("'", "'\\''") & "' -ic '. ./scripts/install_hlv.sh'"
+      exec "'" & userShell.replace("'", "'\\''") & "' -ic '. ./" & scriptDir & "/check_hlv.sh'"
     else:
-      echo "Run this in Bash or Zsh to check your current aliases and functions:"
-      echo ". ./scripts/install_hlv.sh"
+      exec "sh " & scriptDir & "/check_hlv.sh"
 
-task build, "Build http_logviewer binary":
-  exec "nim c --outdir:build src/http_logviewer.nim"
+task build, "Build http_logviewer and hlv binaries":
+  for command in ["http_logviewer", "hlv"]:
+    exec "nim c --out:build/" & command & " src/" & command & ".nim"
 
 task release, "Build optimized release binary":
-  exec "nim c -d:release --opt:speed --outdir:build src/http_logviewer.nim"
+  for command in ["http_logviewer", "hlv"]:
+    exec "nim c -d:release --opt:speed --out:build/" & command & " src/" & command & ".nim"
 
 task debug, "Build debug binary with line tracking":
-  exec "nim c -d:debug --outdir:build src/http_logviewer.nim"
+  for command in ["http_logviewer", "hlv"]:
+    exec "nim c -d:debug --out:build/" & command & " src/" & command & ".nim"
 
 task test, "Run unit tests":
   exec "nim c -r tests/test_all.nim"
   when not defined(windows):
-    exec "bash tests/test_shortcut.sh"
+    exec "bash tests/test_hlv_install.sh"
 
 task ci, "Run CI pre-commit and sanity tests":
   exec "bash scripts/ci_check.sh"
@@ -57,6 +58,8 @@ task clean, "Clean all build artifacts":
   if dirExists("build/docs"):
     rmDir "build/docs"
   rmFile "build/http_logviewer"
+  if fileExists("build/hlv"):
+    rmFile "build/hlv"
   if fileExists("build/test1"):
     rmFile "build/test1"
   if fileExists("build/t_build_config"):

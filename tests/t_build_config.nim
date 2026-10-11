@@ -11,12 +11,14 @@ suite "Build & Configuration (Spec 00)":
       let stripped = line.strip()
       if stripped.startsWith("binDir") and "\"build\"" in stripped:
         hasBinDir = true
-      if stripped.startsWith("bin") and "@[\"http_logviewer\"]" in stripped:
+      if stripped.startsWith("bin ") and "\"http_logviewer\"" in stripped:
         hasBin = true
       if stripped.startsWith("srcDir") and "\"src\"" in stripped:
         hasSrcDir = true
     check hasBinDir
     check hasBin
+    check "\"hlv\"" in content
+    check fileExists("src/hlv.nim")
     check hasSrcDir
     check fileExists("src/http_logviewer.nim")
 
@@ -39,7 +41,9 @@ suite "Build & Configuration (Spec 00)":
 
   test "Item 04: Verify build outputs executable in build/ and leaves root clean":
     check fileExists("build/http_logviewer")
+    check fileExists("build/hlv")
     check not fileExists("http_logviewer")
+    check not fileExists("hlv")
     check not dirExists("nimcache")
     check not dirExists("src/nimcache")
 

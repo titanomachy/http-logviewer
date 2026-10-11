@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-10-12
+
+### Fixed
+
+- `nimble install` now builds and installs both `http_logviewer` and `hlv` automatically. Both executables use the same CLI; no checkout or separate shortcut task is required.
+- Installation checks for name collisions before Nimble can replace a launcher. Unrelated `hlv` commands require explicit confirmation, including with `nimble install -y`; Enter or end-of-input cancels installation.
+- Existing launchers owned by this package are accepted for upgrades. Nimble manages the installed executable files and platform launchers.
+- Build, release, debug, and clean tasks now include both executable names.
+
 ## [0.1.2] - 2026-10-12
 
 ### Added
