@@ -168,7 +168,7 @@ http_logviewer --whitelist-list
 http_logviewer --whitelist-remove 192.0.2.10
 ```
 
-Saved addresses are loaded automatically on each CLI run. Traffic from trusted IPs appears as `[WHITELISTED]`, has risk score 0, and is excluded from malicious actor grouping. In JSON it retains category `REAL_USER` with `"whitelisted": true`, so the `real` category filter still includes it. Normal display filters still apply.
+Saved addresses are loaded automatically on each CLI run. Traffic from trusted IPs appears as `[WHITELISTED]` with green text and brackets on a white background, has risk score 0, and is excluded from malicious actor grouping. In JSON it retains category `REAL_USER` with `"whitelisted": true`, so the `real` category filter still includes it. Normal display filters still apply.
 
 The default database is `$XDG_DATA_HOME/http_logviewer/state.sqlite3` on Linux, falling back to `~/.local/share/http_logviewer/state.sqlite3`. Windows and macOS use their per-user application data directories. Use `--state-db /path/to/state.sqlite3` for a different file on both management and viewing commands. Ordinary viewing does not create a database if none exists.
 

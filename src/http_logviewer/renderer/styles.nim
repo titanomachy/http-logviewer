@@ -47,7 +47,7 @@ const
 
   # Intent Category Badges (Colored)
   BadgeReal*       = "\e[32m[REAL USER]\e[0m"
-  BadgeWhitelisted* = "\e[92m[WHITELISTED]\e[0m"
+  BadgeWhitelisted* = "\e[107;32m[WHITELISTED]\e[0m"
   BadgeGoodBot*    = "\e[36m[GOOD BOT ]\e[0m"
   BadgeFriendly*   = "\e[36m[FRIENDLY ]\e[0m"
   BadgeScraper*    = "\e[33m[SCRAPER  ]\e[0m"

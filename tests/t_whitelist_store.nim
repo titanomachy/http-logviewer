@@ -41,7 +41,7 @@ suite "Persistent IP whitelist":
     check profile.whitelisted
     check profile.category == CategoryRealUser
     check formatIntentBadge(profile, colorize = false) == "[WHITELISTED]"
-    check "\e[92m" in formatIntentBadge(profile, colorize = true)
+    check formatIntentBadge(profile, colorize = true) == "\e[107;32m[WHITELISTED]\e[0m"
     check parseThreatProfileJson(%profile) == profile
     check not parseThreatProfileJson(parseJson("{\"category\":\"REAL_USER\",\"score\":0}")).whitelisted
 
